@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=720, height=720, user-scalable=no">
+  <title>PRIZE WHEEL</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    body {
+      width: 720px;
+      height: 720px;
+      overflow: hidden;
+      background: #0a0a0f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+    }
+
+    .container {
+      width: 720px;
+      height: 720px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Circular mask for round display */
+    .circle-mask {
+      width: 700px;
+      height: 700px;
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+      background: radial-gradient(circle at center, #0d1117 0%, #010409 100%);
+      box-shadow: 
+        inset 0 0 60px rgba(0, 255, 255, 0.1),
+        inset 0 0 120px rgba(255, 0, 128, 0.05);
+    }
+
+    /* Outer ring */
+    .outer-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 4px solid transparent;
+      background: linear-gradient(#0d1117, #0d1117) padding-box,
+                  linear-gradient(135deg, #00ffff, #ff0080, #00ffff) border-box;
+      animation: ringPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes ringPulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+
+    /* The wheel */
+    .wheel {
+      position: absolute;
+      width: 580px;
+      height: 580px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      transition: none;
+    }
+
+    .wheel.spinning {
+      transition: transform 0.05s linear;
+    }
+
+    .wheel-segment {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
+
+    .wheel-segment path {
+      transition: filter 0.2s;
+    }
+
+    .wheel-segment text {
+      font-family: 'Courier New', monospace;
+      font-size: 28px;
+      font-weight: bold;
+      fill: #000;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      filter: drop-shadow(0 0 4px rgba(255,255,255,0.5));
+    }
+
+    /* Segment colors - 10 unique cyberpunk colors */
+    .seg-0 { background: linear-gradient(180deg, #00ffff 0%, #00cccc 100%); }
+    .seg-1 { background: linear-gradient(180deg, #ff0080 0%, #cc0066 100%); }
+    .seg-2 { background: linear-gradient(180deg, #00ff88 0%, #00cc6a 100%); }
+    .seg-3 { background: linear-gradient(180deg, #ffff00 0%, #cccc00 100%); }
+    .seg-4 { background: linear-gradient(180deg, #ff6600 0%, #cc5200 100%); }
+    .seg-5 { background: linear-gradient(180deg, #aa00ff 0%, #8800cc 100%); }
+    .seg-6 { background: linear-gradient(180deg, #ff3333 0%, #cc2929 100%); }
+    .seg-7 { background: linear-gradient(180deg, #33ff33 0%, #29cc29 100%); }
+    .seg-8 { background: linear-gradient(180deg, #3399ff 0%, #297acc 100%); }
+    .seg-9 { background: linear-gradient(180deg, #ff66ff 0%, #cc52cc 100%); }
+
+    /* Center hub */
+    .center-hub {
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #2a2a3a, #0a0a0f);
+      border: 3px solid #00ffff;
+      box-shadow: 
+        0 0 20px rgba(0, 255, 255, 0.5),
+        0 0 40px rgba(0, 255, 255, 0.3),
+        inset 0 0 20px rgba(0, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .center-hub::after {
+      content: 'SPIN';
+      color: #00ffff;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 3px;
+      text-shadow: 0 0 10px #00ffff;
+    }
+
+    .center-hub.active::after {
+      content: '>>>>';
+      animation: spinText 0.1s linear infinite;
+    }
+
+    @keyframes spinText {
+      0% { content: '>>>>'; }
+      25% { content: '>>>>'; }
+      50% { content: '>>>>'; }
+      75% { content: '>>>>'; }
+    }
+
+    /* Pointer/Arrow */
+    .pointer {
+      position: absolute;
+      top: 35px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      filter: drop-shadow(0 0 10px rgba(255, 0, 128, 0.8));
+    }
+
+    .pointer svg {
+      width: 50px;
+      height: 60px;
+    }
+
+    /* Winner display */
+    .winner-display {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px solid #00ffff;
+      padding: 10px 30px;
+      border-radius: 5px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 30;
+    }
+
+    .winner-display.show {
+      opacity: 1;
+      animation: winnerGlow 0.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes winnerGlow {
+      from { 
+        box-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+        border-color: #00ffff;
+      }
+      to { 
+        box-shadow: 0 0 20px #ff0080, 0 0 40px #ff0080;
+        border-color: #ff0080;
+      }
+    }
+
+    .winner-display span {
+      color: #fff;
+      font-size: 20px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    /* Scan lines overlay */
+    .scanlines {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.1) 2px,
+        rgba(0, 0, 0, 0.1) 4px
+      );
+      pointer-events: none;
+      border-radius: 50%;
+    }
+
+    /* Touch hint */
+    .touch-hint {
+      position: absolute;
+      bottom: 140px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(0, 255, 255, 0.5);
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      animation: hintPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes hintPulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.8; }
+    }
+
+    .touch-hint.hidden {
+      display: none;
+    }
+
+    /* Tick marks around edge */
+    .tick-marks {
+      position: absolute;
+      width: 620px;
+      height: 620px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+    }
+
+    .tick {
+      position: absolute;
+      width: 2px;
+      height: 15px;
+      background: rgba(0, 255, 255, 0.6);
+      top: 0;
+      left: 50%;
+      transform-origin: center 310px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="circle-mask">
+      <div class="outer-ring"></div>
+      
+      <div class="tick-marks" id="tickMarks"></div>
+      
+      <div class="wheel" id="wheel"></div>
+      
+      <div class="center-hub" id="centerHub"></div>
+      
+      <div class="pointer">
+        <svg viewBox="0 0 50 60" fill="none">
+          <path d="M25 60 L5 10 L25 20 L45 10 Z" fill="#ff0080" stroke="#fff" stroke-width="2"/>
+          <path d="M25 55 L10 15 L25 23 L40 15 Z" fill="url(#pointerGrad)"/>
+          <defs>
+            <linearGradient id="pointerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" style="stop-color:#ff0080"/>
+              <stop offset="100%" style="stop-color:#ff4499"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      
+      <div class="winner-display" id="winnerDisplay">
+        <span id="winnerText"></span>
+      </div>
+      
+      <div class="touch-hint" id="touchHint">[ SWIPE TO SPIN ]</div>
+      
+      <div class="scanlines"></div>
+    </div>
+  </div>
+
+  <script>
+    const prizes = [
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '10'
+    ];
+
+    const wheel = document.getElementById('wheel');
+    const centerHub = document.getElementById('centerHub');
+    const winnerDisplay = document.getElementById('winnerDisplay');
+    const winnerText = document.getElementById('winnerText');
+    const touchHint = document.getElementById('touchHint');
+    const tickMarks = document.getElementById('tickMarks');
+
+    // Colors for 10 segments
+    const colors = [
+      ['#00ffff', '#00cccc'],
+      ['#ff0080', '#cc0066'],
+      ['#00ff88', '#00cc6a'],
+      ['#ffff00', '#cccc00'],
+      ['#ff6600', '#cc5200'],
+      ['#aa00ff', '#8800cc'],
+      ['#ff3333', '#cc2929'],
+      ['#33ff33', '#29cc29'],
+      ['#3399ff', '#297acc'],
+      ['#ff66ff', '#cc52cc']
+    ];
+
+    // Create SVG wheel
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 580 580");
+    svg.setAttribute("width", "580");
+    svg.setAttribute("height", "580");
+    svg.style.position = "absolute";
+    svg.style.top = "0";
+    svg.style.left = "0";
+    
+    const centerX = 290;
+    const centerY = 290;
+    const radius = 280;
+    const segmentAngle = 360 / prizes.length;
+
+    // Create gradient defs
+    const defs = document.createElementNS(svgNS, "defs");
+    colors.forEach((color, i) => {
+      const grad = document.createElementNS(svgNS, "radialGradient");
+      grad.setAttribute("id", `grad${i}`);
+      grad.setAttribute("cx", "50%");
+      grad.setAttribute("cy", "50%");
+      grad.setAttribute("r", "70%");
+      
+      const stop1 = document.createElementNS(svgNS, "stop");
+      stop1.setAttribute("offset", "0%");
+      stop1.setAttribute("stop-color", color[0]);
+      
+      const stop2 = document.createElementNS(svgNS, "stop");
+      stop2.setAttribute("offset", "100%");
+      stop2.setAttribute("stop-color", color[1]);
+      
+      grad.appendChild(stop1);
+      grad.appendChild(stop2);
+      defs.appendChild(grad);
+    });
+    svg.appendChild(defs);
+
+    // Create segments
+    prizes.forEach((prize, i) => {
+      const startAngle = (i * segmentAngle - 90) * Math.PI / 180;
+      const endAngle = ((i + 1) * segmentAngle - 90) * Math.PI / 180;
+      
+      const x1 = centerX + radius * Math.cos(startAngle);
+      const y1 = centerY + radius * Math.sin(startAngle);
+      const x2 = centerX + radius * Math.cos(endAngle);
+      const y2 = centerY + radius * Math.sin(endAngle);
+      
+      const largeArc = segmentAngle > 180 ? 1 : 0;
+      
+      const path = document.createElementNS(svgNS, "path");
+      const d = `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+      path.setAttribute("d", d);
+      path.setAttribute("fill", `url(#grad${i})`);
+      path.setAttribute("stroke", "#000");
+      path.setAttribute("stroke-width", "2");
+      svg.appendChild(path);
+      
+      // Add number label
+      const labelAngle = ((i + 0.5) * segmentAngle - 90) * Math.PI / 180;
+      const labelRadius = radius * 0.65;
+      const labelX = centerX + labelRadius * Math.cos(labelAngle);
+      const labelY = centerY + labelRadius * Math.sin(labelAngle);
+      
+      const text = document.createElementNS(svgNS, "text");
+      text.setAttribute("x", labelX);
+      text.setAttribute("y", labelY);
+      text.textContent = prize;
+      svg.appendChild(text);
+    });
+
+    wheel.appendChild(svg);
+
+    // Create tick marks
+    for (let i = 0; i < 72; i++) {
+      const tick = document.createElement('div');
+      tick.className = 'tick';
+      tick.style.transform = `rotate(${i * 5}deg)`;
+      if (i % 9 === 0) {
+        tick.style.height = '25px';
+        tick.style.background = '#ff0080';
+      }
+      tickMarks.appendChild(tick);
+    }
+
+    // Wheel state
+    let currentRotation = 0;
+    let velocity = 0;
+    let isSpinning = false;
+    let lastAngle = 0;
+    let lastTime = 0;
+    let touchStartAngle = 0;
+    let touchStartRotation = 0;
+    let isDragging = false;
+    // Circular buffer for velocity samples (avoids array shift garbage)
+    const VELOCITY_BUFFER_SIZE = 5;
+    const angularVelocities = new Float32Array(VELOCITY_BUFFER_SIZE);
+    let velocityIndex = 0;
+    let velocityCount = 0;
+
+    // Get angle from touch point relative to wheel center
+    function getAngle(x, y) {
+      const rect = wheel.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      return Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+    }
+
+    // Touch/Mouse handlers
+    function handleStart(x, y) {
+      isDragging = true;
+      isSpinning = false;
+      velocity = 0;
+      touchStartAngle = getAngle(x, y);
+      touchStartRotation = currentRotation;
+      lastAngle = touchStartAngle;
+      lastTime = performance.now();
+      // Reset circular buffer
+      velocityIndex = 0;
+      velocityCount = 0;
+
+      centerHub.classList.add('active');
+      touchHint.classList.add('hidden');
+      winnerDisplay.classList.remove('show');
+    }
+
+    function handleMove(x, y) {
+      if (!isDragging) return;
+      
+      const currentAngle = getAngle(x, y);
+      let deltaAngle = currentAngle - lastAngle;
+      
+      // Handle wrap-around
+      if (deltaAngle > 180) deltaAngle -= 360;
+      if (deltaAngle < -180) deltaAngle += 360;
+      
+      currentRotation += deltaAngle;
+      wheel.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+      
+      // Track velocity using circular buffer
+      const now = performance.now();
+      const dt = now - lastTime;
+      if (dt > 0) {
+        const instantVelocity = deltaAngle / dt * 1000;
+        angularVelocities[velocityIndex] = instantVelocity;
+        velocityIndex = (velocityIndex + 1) % VELOCITY_BUFFER_SIZE;
+        if (velocityCount < VELOCITY_BUFFER_SIZE) velocityCount++;
+      }
+      
+      lastAngle = currentAngle;
+      lastTime = now;
+    }
+
+    function handleEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      centerHub.classList.remove('active');
+
+      // Calculate average velocity from circular buffer
+      if (velocityCount > 0) {
+        let sum = 0;
+        for (let i = 0; i < velocityCount; i++) sum += angularVelocities[i];
+        velocity = sum / velocityCount;
+      }
+      
+      // Clamp velocity for reasonable spin times
+      const maxVelocity = 800;
+      velocity = Math.max(-maxVelocity, Math.min(maxVelocity, velocity));
+      
+      if (Math.abs(velocity) > 30) {
+        isSpinning = true;
+        requestAnimationFrame(spinLoop);
+      }
+    }
+
+    // Physics loop
+    function spinLoop() {
+      if (!isSpinning) return;
+      
+      const friction = 0.97;
+      const minVelocity = 8;
+      
+      velocity *= friction;
+      currentRotation += velocity * 0.016;
+      
+      wheel.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+      
+      // Tick sound simulation via visual feedback
+      const normalizedRotation = ((currentRotation % 360) + 360) % 360;
+      
+      if (Math.abs(velocity) > minVelocity) {
+        requestAnimationFrame(spinLoop);
+      } else {
+        isSpinning = false;
+        velocity = 0;
+        showWinner();
+      }
+    }
+
+    function showWinner() {
+      // Normalize rotation to 0-360
+      let normalizedRotation = ((currentRotation % 360) + 360) % 360;
+      
+      // The pointer is at the top (270 degrees in standard position)
+      // Adjust for where the pointer points
+      let pointerAngle = (360 - normalizedRotation + 270) % 360;
+      
+      // Find which segment
+      const segmentIndex = Math.floor(pointerAngle / segmentAngle) % prizes.length;
+      const winner = prizes[segmentIndex];
+      
+      winnerText.textContent = winner;
+      winnerDisplay.classList.add('show');
+      
+      // Reset hint after delay
+      setTimeout(() => {
+        touchHint.classList.remove('hidden');
+      }, 3000);
+    }
+
+    // Event listeners
+    wheel.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleStart(touch.clientX, touch.clientY);
+    });
+
+    wheel.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleMove(touch.clientX, touch.clientY);
+    });
+
+    wheel.addEventListener('touchend', handleEnd);
+    wheel.addEventListener('touchcancel', handleEnd);
+
+    // Mouse support for testing
+    wheel.addEventListener('mousedown', (e) => {
+      handleStart(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      handleMove(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mouseup', handleEnd);
+
+    // Center hub tap for quick spin
+    centerHub.addEventListener('click', () => {
+      touchHint.classList.add('hidden');
+      winnerDisplay.classList.remove('show');
+      
+      // Random spin
+      velocity = 600 + Math.random() * 400;
+      if (Math.random() > 0.5) velocity *= -1;
+      
+      isSpinning = true;
+      requestAnimationFrame(spinLoop);
+    });
+
+    centerHub.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    });
+
+    // Initial position
+    wheel.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+  </script>
+</body>
+</html>

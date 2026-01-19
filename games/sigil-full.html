@@ -1,0 +1,3523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SIGIL</title>
+    <style>
+        /* ═══════════════════════════════════════════════════════════════
+           GAME SCALE - Adjust this value to resize the entire game
+           ═══════════════════════════════════════════════════════════════ */
+        :root {
+            --game-scale: 0.92; /* 1.0 = full size, 0.9 = 90%, etc */
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden; background: #000;
+            display: flex; align-items: center; justify-content: center;
+            touch-action: none; -webkit-user-select: none; user-select: none;
+            font-family: 'Courier New', monospace;
+        }
+        #gameContainer {
+            position: relative;
+            width: min(100vw, 100vh); height: min(100vw, 100vh);
+            max-width: 720px; max-height: 720px;
+            transform: scale(var(--game-scale));
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #fxCanvas { pointer-events: none; }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           CRT EFFECTS - Vintage TV simulation
+           ═══════════════════════════════════════════════════════════════ */
+        
+        /* CRT Container - holds all effects */
+        #crtOverlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 200;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        
+        /* Scanlines */
+        #crtOverlay::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.12) 0px,
+                rgba(0, 0, 0, 0.12) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 2;
+            animation: scanlineMove 10s linear infinite;
+        }
+        
+        @keyframes scanlineMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
+        
+        /* Vignette + Bubble screen edge darkening */
+        #crtOverlay::after {
+            content: '';
+            position: absolute;
+            top: -5%; left: -5%; width: 110%; height: 110%;
+            background: radial-gradient(
+                ellipse at center,
+                transparent 0%,
+                transparent 50%,
+                rgba(0, 0, 0, 0.15) 70%,
+                rgba(0, 0, 0, 0.5) 85%,
+                rgba(0, 0, 0, 0.85) 100%
+            );
+            pointer-events: none;
+            z-index: 3;
+        }
+        
+        /* Screen curvature / bubble effect */
+        #crtBubble {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            border-radius: 50%;
+            background: radial-gradient(
+                ellipse at center,
+                transparent 0%,
+                transparent 65%,
+                rgba(60, 80, 100, 0.04) 80%,
+                rgba(40, 60, 80, 0.1) 92%,
+                rgba(20, 40, 60, 0.2) 100%
+            );
+            /* Glass highlight on curved surface */
+            box-shadow: 
+                inset 0 0 80px rgba(255, 255, 255, 0.02),
+                inset 0 0 150px rgba(80, 100, 130, 0.03),
+                inset 0 -40px 60px rgba(0, 0, 0, 0.1),
+                inset 0 40px 60px rgba(255, 255, 255, 0.02);
+        }
+        
+        /* Glass reflection */
+        #crtReflection {
+            position: absolute;
+            top: 5%; left: 15%;
+            width: 35%; height: 20%;
+            background: linear-gradient(
+                135deg,
+                rgba(255, 255, 255, 0.04) 0%,
+                rgba(255, 255, 255, 0.01) 50%,
+                transparent 100%
+            );
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 4;
+            filter: blur(8px);
+        }
+        
+        /* CRT Noise/static canvas */
+        #crtNoiseCanvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 6;
+            opacity: 0.03;
+            mix-blend-mode: overlay;
+        }
+        
+        /* Horizontal RGB bar that occasionally sweeps */
+        #crtSweep {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 8px;
+            background: linear-gradient(
+                180deg,
+                transparent 0%,
+                rgba(255, 0, 0, 0.03) 20%,
+                rgba(0, 255, 0, 0.03) 50%,
+                rgba(0, 0, 255, 0.03) 80%,
+                transparent 100%
+            );
+            pointer-events: none;
+            z-index: 7;
+            animation: sweepDown 8s linear infinite;
+            opacity: 0.7;
+        }
+        
+        @keyframes sweepDown {
+            0% { top: -10%; opacity: 0; }
+            5% { opacity: 0.7; }
+            95% { opacity: 0.7; }
+            100% { top: 105%; opacity: 0; }
+        }
+        
+        /* Chromatic aberration layer */
+        #crtAberration {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            mix-blend-mode: screen;
+            opacity: 0;
+        }
+        
+        /* Flicker animation - subtle and random-feeling */
+        @keyframes crtFlicker {
+            0%, 100% { opacity: 1; filter: brightness(1); }
+            41% { opacity: 1; }
+            42% { opacity: 0.97; filter: brightness(0.98); }
+            43% { opacity: 1; filter: brightness(1); }
+            67% { opacity: 1; }
+            68% { opacity: 0.98; }
+            69% { opacity: 1; }
+            92% { opacity: 1; }
+            93% { opacity: 0.96; filter: brightness(0.97); }
+            94% { opacity: 0.99; filter: brightness(1.01); }
+            95% { opacity: 1; filter: brightness(1); }
+        }
+        
+        #gameContainer {
+            animation: crtFlicker 5s infinite;
+        }
+        
+        /* Phosphor glow effect on content */
+        @keyframes phosphorGlow {
+            0%, 100% { filter: url(#chromaticAberration) brightness(1) contrast(1.02); }
+            50% { filter: url(#chromaticAberration) brightness(1.01) contrast(1.03); }
+        }
+        
+        /* RGB shift for chromatic aberration on game canvases */
+        #mainCanvas, #bgCanvas {
+            filter: url(#chromaticAberration);
+            animation: phosphorGlow 3s ease-in-out infinite;
+        }
+        
+        /* Performance mode - disable heavy effects */
+        .perf-mode #crtNoiseCanvas,
+        .perf-mode #crtSweep,
+        .perf-mode #crtReflection { display: none; }
+        .perf-mode #mainCanvas, .perf-mode #bgCanvas { 
+            filter: none; 
+            animation: none; 
+        }
+        .perf-mode #gameContainer { animation: none; }
+        .perf-mode #crtOverlay::before { animation: none; }
+        
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100; background: rgba(6, 6, 10, 0.97);
+        }
+        .overlay.hidden { display: none; }
+        .title {
+            font-size: min(12vw, 80px); font-weight: bold; letter-spacing: 0.4em;
+            color: #d4d0c4; text-shadow: 0 0 40px rgba(212, 208, 196, 0.3);
+            margin-bottom: 3%;
+        }
+        .subtitle {
+            font-size: min(2vw, 14px); letter-spacing: 0.3em;
+            color: rgba(212, 208, 196, 0.4); text-transform: uppercase; margin-bottom: 10%;
+        }
+        .btn {
+            font-family: 'Courier New', monospace; font-size: min(2vw, 14px);
+            letter-spacing: 0.3em; color: #0a0a0c; background: #d4d0c4;
+            border: none; padding: min(2.5vw, 16px) min(7vw, 50px);
+            cursor: pointer; text-transform: uppercase; margin: 1.5%;
+            transition: transform 0.1s;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn.secondary {
+            background: transparent; border: 1px solid rgba(212, 208, 196, 0.3);
+            color: rgba(212, 208, 196, 0.7);
+        }
+        #muteBtn {
+            font-size: min(1.5vw, 11px); padding: min(1.5vw, 10px) min(4vw, 28px);
+            margin-top: 4%;
+        }
+        .victor {
+            font-size: min(4vw, 28px); letter-spacing: 0.5em;
+            text-transform: uppercase; margin-bottom: 2%;
+        }
+        .victorText {
+            font-size: min(1.8vw, 12px); letter-spacing: 0.4em;
+            color: rgba(212, 208, 196, 0.4); margin-bottom: 8%;
+        }
+        #tutorialOverlay { cursor: pointer; }
+        .tutorialContent { text-align: center; max-width: 80%; }
+        .tutStep {
+            font-size: min(1.5vw, 11px); letter-spacing: 0.2em;
+            color: rgba(212, 208, 196, 0.3); margin-bottom: 4%;
+        }
+        .tutTitle {
+            font-size: min(4vw, 28px); font-weight: bold; letter-spacing: 0.25em;
+            color: #d4d0c4; margin-bottom: 5%;
+        }
+        .tutText {
+            font-size: min(2vw, 14px); line-height: 2;
+            color: rgba(212, 208, 196, 0.7); margin-bottom: 6%;
+        }
+        .tutHint {
+            position: absolute; bottom: 6%;
+            font-size: min(1.3vw, 10px); letter-spacing: 0.2em;
+            color: rgba(212, 208, 196, 0.2);
+        }
+        .spellList {
+            display: flex; gap: min(4vw, 30px); margin: 5% 0;
+            justify-content: center; flex-wrap: wrap;
+        }
+        .spellInfo {
+            text-align: center; padding: min(2vw, 15px);
+            border: 1px solid rgba(212, 208, 196, 0.15); border-radius: 4px;
+            min-width: min(18vw, 100px);
+        }
+        .spellInfo canvas { width: min(8vw, 50px); height: min(8vw, 50px); margin-bottom: 8px; }
+        .spellName { font-size: min(1.5vw, 11px); color: #d4d0c4; letter-spacing: 0.15em; }
+        .spellCost { font-size: min(1.2vw, 9px); color: rgba(212, 208, 196, 0.4); margin-top: 4px; }
+        .spellDesc { font-size: min(1.1vw, 8px); color: rgba(212, 208, 196, 0.3); margin-top: 4px; }
+        .energyHud {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            display: none; gap: 6px; align-items: center;
+            pointer-events: none; z-index: 50;
+        }
+        .energyHud.top { top: 3%; }
+        .energyHud.bottom { bottom: 3%; }
+        .energyHud .label {
+            font-size: min(1.4vw, 10px); letter-spacing: 0.15em;
+            color: rgba(212, 208, 196, 0.4); margin-right: 8px;
+        }
+        .energyHud .pip {
+            width: min(3vw, 18px); height: min(3vw, 18px);
+            border-radius: 50%; border: 1px solid rgba(212, 208, 196, 0.2);
+            background: rgba(10, 10, 15, 0.5); position: relative;
+            transition: all 0.15s ease;
+        }
+        .energyHud .pip.full {
+            background: radial-gradient(circle at 30% 30%, #fff, #d4d0c4 40%, #8a7aaa);
+            border-color: rgba(212, 208, 196, 0.6);
+            box-shadow: 0 0 12px rgba(212, 208, 196, 0.5);
+        }
+        .energyHud.p1 .pip.full {
+            background: radial-gradient(circle at 30% 30%, #fff, #ffaa7a 40%, #e85a3c);
+            box-shadow: 0 0 12px rgba(232, 90, 60, 0.5);
+        }
+        .energyHud.p2 .pip.full {
+            background: radial-gradient(circle at 30% 30%, #fff, #72b8ff 40%, #3c8ee8);
+            box-shadow: 0 0 12px rgba(60, 142, 232, 0.5);
+        }
+        .energyHud .pip.full {
+            animation: pipPulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pipPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.85; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- SVG Filter for chromatic aberration -->
+        <svg style="position: absolute; width: 0; height: 0;">
+            <defs>
+                <filter id="chromaticAberration" x="-10%" y="-10%" width="120%" height="120%">
+                    <!-- Red channel - shift right -->
+                    <feOffset in="SourceGraphic" dx="0.8" dy="0" result="red">
+                        <animate attributeName="dx" values="0.8;1.2;0.8" dur="3s" repeatCount="indefinite"/>
+                    </feOffset>
+                    <feColorMatrix in="red" type="matrix" 
+                        values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="redChannel"/>
+                    
+                    <!-- Green channel - no shift -->
+                    <feColorMatrix in="SourceGraphic" type="matrix" 
+                        values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="greenChannel"/>
+                    
+                    <!-- Blue channel - shift left -->
+                    <feOffset in="SourceGraphic" dx="-0.8" dy="0" result="blue">
+                        <animate attributeName="dx" values="-0.8;-1.2;-0.8" dur="3s" repeatCount="indefinite"/>
+                    </feOffset>
+                    <feColorMatrix in="blue" type="matrix" 
+                        values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blueChannel"/>
+                    
+                    <!-- Combine channels -->
+                    <feBlend in="redChannel" in2="greenChannel" mode="screen" result="rg"/>
+                    <feBlend in="rg" in2="blueChannel" mode="screen"/>
+                </filter>
+                
+                <!-- Barrel distortion filter for bubble effect -->
+                <filter id="bubbleDistort" x="-5%" y="-5%" width="110%" height="110%">
+                    <feTurbulence type="turbulence" baseFrequency="0.01" numOctaves="1" result="noise" seed="5"/>
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+                </filter>
+            </defs>
+        </svg>
+        
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="mainCanvas"></canvas>
+        <canvas id="fxCanvas"></canvas>
+        
+        <!-- CRT Effect Overlays -->
+        <div id="crtOverlay">
+            <div id="crtBubble"></div>
+            <div id="crtReflection"></div>
+            <div id="crtSweep"></div>
+            <canvas id="crtNoiseCanvas"></canvas>
+        </div>
+        
+        <div class="energyHud top" id="energyTop"></div>
+        <div class="energyHud bottom" id="energyBottom"></div>
+        
+        <div class="overlay" id="startScreen">
+            <div class="title">SIGIL</div>
+            <div class="subtitle">A Circular Duel</div>
+            <button class="btn" id="tutorialBtn">Learn</button>
+            <button class="btn secondary" id="quickPlayBtn">Play</button>
+            <button class="btn secondary" id="muteBtn">🔊 Sound</button>
+        </div>
+        
+        <div class="overlay hidden" id="tutorialOverlay">
+            <div class="tutorialContent" id="tutorialContent"></div>
+            <div class="tutHint">TAP TO CONTINUE</div>
+        </div>
+        
+        <div class="overlay hidden" id="victoryScreen">
+            <div class="victor" id="victorTitle"></div>
+            <div class="victorText">RITUAL COMPLETE</div>
+            <button class="btn" id="restartBtn">Again</button>
+            <button class="btn secondary" id="menuBtn">Menu</button>
+        </div>
+    </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// GAME SCALE CONTROL
+// ═══════════════════════════════════════════════════════════════════
+// Adjust the game size by changing --game-scale in CSS or calling setGameScale()
+// Values: 1.0 = full size, 0.9 = 90%, 0.85 = 85%, etc.
+function setGameScale(scale) {
+    document.documentElement.style.setProperty('--game-scale', scale);
+}
+// Example: setGameScale(0.85) to make game 85% of default size
+
+// ═══════════════════════════════════════════════════════════════════
+// PERFORMANCE MODE - Set to true for low-power devices (Pi 3B, mobile)
+// Set to false for full visual effects on capable hardware
+// ═══════════════════════════════════════════════════════════════════
+const PERF_MODE = false; // ← CHANGE THIS: true = optimized, false = full effects
+const PARTICLE_MULT = PERF_MODE ? 0.4 : 1;  // Reduce particle counts
+const MAX_PARTICLES = PERF_MODE ? 40 : 150;
+const MAX_RUNES = PERF_MODE ? 6 : 12;
+const TARGET_FPS = PERF_MODE ? 30 : 60;
+const FRAME_TIME = 1000 / TARGET_FPS;
+
+// Apply perf-mode class for CSS optimizations
+if (PERF_MODE) document.body.classList.add('perf-mode');
+
+// ═══════════════════════════════════════════════════════════════════
+// AUDIO SYSTEM
+// ═══════════════════════════════════════════════════════════════════
+let audioCtx = null;
+let audioInitialized = false;
+let masterGain = null;
+let musicGain = null;
+let sfxGain = null;
+
+// Musical constants - dark/mystical scale (D minor with some chromatic)
+const SCALE = [146.83, 164.81, 174.61, 196.00, 220.00, 233.08, 261.63, 293.66]; // D3 minor scale
+const DRONE_FREQ = 73.42; // D2 drone
+
+function initAudio() {
+    if (audioInitialized) return;
+    
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.5;
+        masterGain.connect(audioCtx.destination);
+        
+        musicGain = audioCtx.createGain();
+        musicGain.gain.value = 0.35;
+        musicGain.connect(masterGain);
+        
+        sfxGain = audioCtx.createGain();
+        sfxGain.gain.value = 0.6;
+        sfxGain.connect(masterGain);
+        
+        audioInitialized = true;
+        startMusic();
+    } catch(e) {
+        console.log('Audio init failed:', e);
+    }
+}
+
+// Resume audio context on user interaction
+function resumeAudio() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    if (!audioInitialized) {
+        initAudio();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROCEDURAL MUSIC SYSTEM - Dynamic Arrangement
+// ═══════════════════════════════════════════════════════════════════
+let musicNodes = [];
+let musicIntervals = [];
+let musicTimeouts = [];
+const BPM = 128;
+const BEAT = 60 / BPM;
+const BAR = BEAT * 4;
+
+// D minor scale frequencies
+const NOTES = {
+    D2: 73.42, E2: 82.41, F2: 87.31, G2: 98.00, A2: 110.00, Bb2: 116.54, C3: 130.81,
+    D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, Bb3: 233.08, C4: 261.63,
+    D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, Bb4: 466.16, C5: 523.25,
+    D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00
+};
+
+// Chord progressions
+const CHORDS = [
+    [NOTES.D3, NOTES.F3, NOTES.A3],      // Dm
+    [NOTES.Bb2, NOTES.D3, NOTES.F3],     // Bb
+    [NOTES.F3, NOTES.A3, NOTES.C4],      // F
+    [NOTES.C3, NOTES.E3, NOTES.G3],      // C
+];
+
+// Arrangement sections (bars per section)
+const SECTIONS = [
+    { name: 'intro', bars: 8, kick: false, snare: false, hat: false, bass: true, arp: false, pad: true, lead: false, intensity: 0.3 },
+    { name: 'build1', bars: 8, kick: true, snare: false, hat: true, bass: true, arp: true, pad: true, lead: false, intensity: 0.5 },
+    { name: 'drop1', bars: 16, kick: true, snare: true, hat: true, bass: true, arp: true, pad: true, lead: true, intensity: 1.0 },
+    { name: 'break', bars: 8, kick: false, snare: false, hat: false, bass: false, arp: false, pad: true, lead: true, intensity: 0.3 },
+    { name: 'build2', bars: 8, kick: true, snare: false, hat: true, bass: true, arp: true, pad: true, lead: false, intensity: 0.6 },
+    { name: 'drop2', bars: 16, kick: true, snare: true, hat: true, bass: true, arp: true, pad: true, lead: true, intensity: 1.0 },
+    { name: 'break2', bars: 8, kick: false, snare: false, hat: true, bass: true, arp: false, pad: true, lead: false, intensity: 0.4 },
+    { name: 'drop3', bars: 16, kick: true, snare: true, hat: true, bass: true, arp: true, pad: true, lead: true, intensity: 1.0 },
+];
+
+let musicCompressor = null;
+let masterFilter = null;
+let currentSection = 0;
+let barInSection = 0;
+let totalBars = 0;
+let section = SECTIONS[0];
+
+function startMusic() {
+    if (!audioCtx || !audioInitialized) return;
+    stopMusic();
+    
+    currentSection = 0;
+    barInSection = 0;
+    totalBars = 0;
+    section = SECTIONS[0];
+    
+    // Master bus
+    musicCompressor = audioCtx.createDynamicsCompressor();
+    musicCompressor.threshold.value = -18;
+    musicCompressor.knee.value = 25;
+    musicCompressor.ratio.value = 4;
+    musicCompressor.attack.value = 0.005;
+    musicCompressor.release.value = 0.15;
+    
+    masterFilter = audioCtx.createBiquadFilter();
+    masterFilter.type = 'lowpass';
+    masterFilter.frequency.value = 2000;
+    masterFilter.Q.value = 1;
+    
+    musicCompressor.connect(masterFilter);
+    masterFilter.connect(musicGain);
+    
+    // Start the arrangement controller
+    musicIntervals.push(setInterval(updateArrangement, BAR * 1000));
+    
+    if (PERF_MODE) {
+        startSimpleMusic();
+    } else {
+        startFullMusic();
+    }
+}
+
+function updateArrangement() {
+    barInSection++;
+    totalBars++;
+    
+    // Check for section change
+    if (barInSection >= section.bars) {
+        barInSection = 0;
+        currentSection++;
+        
+        // Loop back after all sections
+        if (currentSection >= SECTIONS.length) {
+            currentSection = 3; // Loop from breakdown
+        }
+        
+        section = SECTIONS[currentSection];
+        
+        // Filter sweep on section change
+        if (masterFilter) {
+            const now = audioCtx.currentTime;
+            if (section.name.includes('drop')) {
+                // Open filter on drops
+                masterFilter.frequency.setValueAtTime(masterFilter.frequency.value, now);
+                masterFilter.frequency.linearRampToValueAtTime(8000, now + 0.5);
+            } else if (section.name.includes('break')) {
+                // Close filter on breakdowns
+                masterFilter.frequency.setValueAtTime(masterFilter.frequency.value, now);
+                masterFilter.frequency.linearRampToValueAtTime(800, now + 1);
+            } else if (section.name.includes('build')) {
+                // Gradual open during builds
+                masterFilter.frequency.setValueAtTime(1000, now);
+                masterFilter.frequency.linearRampToValueAtTime(4000, now + section.bars * BAR);
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FULL MUSIC (all layers, dynamic arrangement)
+// ═══════════════════════════════════════════════════════════════════
+function startFullMusic() {
+    // Sub bass (always on, varies with intensity)
+    const subBass = audioCtx.createOscillator();
+    subBass.type = 'sine';
+    subBass.frequency.value = NOTES.D2 / 2;
+    const subGain = audioCtx.createGain();
+    subGain.gain.value = 0.15;
+    subBass.connect(subGain);
+    subGain.connect(musicCompressor);
+    subBass.start();
+    musicNodes.push(subBass);
+    
+    // Kick patterns
+    const kickPatterns = [
+        [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0],
+        [1,0,0,0, 1,0,1,0, 1,0,0,0, 1,0,0,1],
+        [1,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,1,0],
+        [1,0,0,0, 0,0,1,0, 1,0,0,0, 1,0,0,0],
+    ];
+    let kickStep = 0;
+    
+    const playKick = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.kick) { kickStep++; return; }
+        
+        const patIdx = Math.floor(totalBars / 4) % kickPatterns.length;
+        const pattern = kickPatterns[patIdx];
+        if (pattern[kickStep % 16]) {
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(35, now + 0.07);
+            
+            const click = audioCtx.createOscillator();
+            click.type = 'square';
+            click.frequency.setValueAtTime(800, now);
+            click.frequency.exponentialRampToValueAtTime(100, now + 0.02);
+            const clickGain = audioCtx.createGain();
+            clickGain.gain.setValueAtTime(0.06 * section.intensity, now);
+            clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.28 * section.intensity, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+            
+            osc.connect(gain); click.connect(clickGain);
+            gain.connect(musicCompressor); clickGain.connect(musicCompressor);
+            osc.start(now); osc.stop(now + 0.25);
+            click.start(now); click.stop(now + 0.02);
+        }
+        kickStep++;
+    };
+    musicIntervals.push(setInterval(playKick, BEAT * 0.25 * 1000));
+    
+    // Snare patterns
+    const snarePatterns = [
+        [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+        [0,0,0,0, 1,0,0,0.3, 0,0,0,0, 1,0,0.4,0],
+        [0,0,0,0, 1,0,0,0, 0,0,0.3,0, 1,0,0,0.3],
+    ];
+    let snareStep = 0;
+    
+    const playSnare = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.snare) { snareStep++; return; }
+        
+        const patIdx = Math.floor(totalBars / 8) % snarePatterns.length;
+        const pattern = snarePatterns[patIdx];
+        const hit = pattern[snareStep % 16];
+        if (hit) {
+            const now = audioCtx.currentTime;
+            const vol = (typeof hit === 'number' && hit < 1 ? hit : 0.16) * section.intensity;
+            
+            const bufferSize = audioCtx.sampleRate * 0.12;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'highpass';
+            noiseFilter.frequency.value = 1800;
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(vol, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            
+            noise.connect(noiseFilter); noiseFilter.connect(noiseGain);
+            noiseGain.connect(musicCompressor);
+            noise.start(now);
+        }
+        snareStep++;
+    };
+    musicIntervals.push(setInterval(playSnare, BEAT * 0.25 * 1000));
+    
+    // Hi-hat patterns
+    const hatPatterns = [
+        [1,1,1,1, 1,1,2,1, 1,1,1,1, 1,1,2,1],
+        [1,0,1,1, 1,0,2,1, 1,0,1,1, 1,0,2,1],
+        [2,1,1,1, 1,1,1,1, 2,1,1,1, 1,1,2,1],
+        [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1],
+    ];
+    let hatStep = 0;
+    
+    const playHat = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.hat) { hatStep++; return; }
+        
+        const patIdx = Math.floor(totalBars / 4) % hatPatterns.length;
+        const pattern = hatPatterns[patIdx];
+        const hit = pattern[hatStep % 16];
+        if (hit) {
+            const now = audioCtx.currentTime;
+            const isOpen = hit === 2;
+            const decay = isOpen ? 0.1 : 0.035;
+            const vol = (isOpen ? 0.05 : 0.03) * section.intensity;
+            
+            const bufferSize = audioCtx.sampleRate * decay;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = isOpen ? 8000 : 10000;
+            filter.Q.value = 2;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+            
+            noise.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+            noise.start(now);
+        }
+        hatStep++;
+    };
+    musicIntervals.push(setInterval(playHat, BEAT * 0.25 * 1000));
+    
+    // Bass lines (different per section)
+    const bassLines = [
+        [NOTES.D2, 0, NOTES.D2, NOTES.F2, 0, NOTES.G2, NOTES.A2, 0],
+        [NOTES.D2, NOTES.D2, 0, NOTES.G2, NOTES.F2, 0, NOTES.E2, 0],
+        [NOTES.Bb2, 0, NOTES.Bb2, NOTES.A2, 0, NOTES.G2, NOTES.F2, NOTES.D2],
+        [NOTES.C3, 0, NOTES.C3, NOTES.Bb2, NOTES.A2, 0, NOTES.G2, 0],
+    ];
+    let bassStep = 0;
+    
+    const playBass = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.bass) { bassStep++; return; }
+        
+        const lineIdx = Math.floor(totalBars / 8) % bassLines.length;
+        const line = bassLines[lineIdx];
+        const note = line[bassStep % 8];
+        if (note) {
+            const now = audioCtx.currentTime;
+            const osc1 = audioCtx.createOscillator();
+            osc1.type = 'sawtooth';
+            osc1.frequency.value = note;
+            const osc2 = audioCtx.createOscillator();
+            osc2.type = 'square';
+            osc2.frequency.value = note * 1.003;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(600 + 400 * section.intensity, now);
+            filter.frequency.exponentialRampToValueAtTime(180, now + BEAT * 0.7);
+            filter.Q.value = 5;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.1 * section.intensity, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + BEAT * 0.85);
+            
+            osc1.connect(filter); osc2.connect(filter);
+            filter.connect(gain); gain.connect(musicCompressor);
+            osc1.start(now); osc2.start(now);
+            osc1.stop(now + BEAT); osc2.stop(now + BEAT);
+        }
+        bassStep++;
+    };
+    musicIntervals.push(setInterval(playBass, BEAT * 1000));
+    
+    // Arpeggio patterns (different per chord/section)
+    const arpPatterns = [
+        [NOTES.D4, NOTES.F4, NOTES.A4, NOTES.D5, NOTES.A4, NOTES.F4],
+        [NOTES.Bb3, NOTES.D4, NOTES.F4, NOTES.Bb4, NOTES.F4, NOTES.D4],
+        [NOTES.F4, NOTES.A4, NOTES.C5, NOTES.F5, NOTES.C5, NOTES.A4],
+        [NOTES.C4, NOTES.E4, NOTES.G4, NOTES.C5, NOTES.G4, NOTES.E4],
+    ];
+    let arpStep = 0;
+    
+    const playArp = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.arp) { arpStep++; return; }
+        
+        const patIdx = Math.floor(totalBars / 4) % arpPatterns.length;
+        const pattern = arpPatterns[patIdx];
+        const note = pattern[arpStep % 6];
+        const now = audioCtx.currentTime;
+        
+        const osc = audioCtx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = note;
+        
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2000 + 1000 * section.intensity, now);
+        filter.frequency.exponentialRampToValueAtTime(600, now + BEAT * 0.35);
+        filter.Q.value = 2;
+        
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.035 * section.intensity, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + BEAT * 0.4);
+        
+        osc.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+        osc.start(now); osc.stop(now + BEAT * 0.5);
+        
+        arpStep++;
+    };
+    musicIntervals.push(setInterval(playArp, BEAT * 0.5 * 1000));
+    
+    // Chord pad (swells based on section)
+    let chordIndex = 0;
+    const playPad = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.pad) { chordIndex++; return; }
+        
+        const now = audioCtx.currentTime;
+        const chord = CHORDS[chordIndex % CHORDS.length];
+        const vol = 0.03 * section.intensity;
+        
+        chord.forEach((freq) => {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            const osc2 = audioCtx.createOscillator();
+            osc2.type = 'sine';
+            osc2.frequency.value = freq * 1.004;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(300 + 500 * section.intensity, now);
+            filter.frequency.linearRampToValueAtTime(600 + 400 * section.intensity, now + BAR);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(vol, now + 0.3);
+            gain.gain.setValueAtTime(vol, now + BAR * 1.5);
+            gain.gain.linearRampToValueAtTime(0, now + BAR * 2);
+            
+            osc.connect(filter); osc2.connect(filter);
+            filter.connect(gain); gain.connect(musicCompressor);
+            osc.start(now); osc2.start(now);
+            osc.stop(now + BAR * 2); osc2.stop(now + BAR * 2);
+        });
+        chordIndex++;
+    };
+    musicIntervals.push(setInterval(playPad, BAR * 2 * 1000));
+    playPad();
+    
+    // Lead melody (different melodies per section)
+    const melodies = [
+        [NOTES.D5, 0, NOTES.F5, NOTES.E5, NOTES.D5, 0, NOTES.C5, NOTES.A4],
+        [NOTES.A4, NOTES.Bb4, 0, NOTES.A4, NOTES.G4, NOTES.F4, 0, 0],
+        [0, NOTES.F5, NOTES.E5, NOTES.D5, 0, NOTES.C5, NOTES.D5, 0],
+        [NOTES.G4, 0, NOTES.A4, NOTES.Bb4, NOTES.C5, 0, NOTES.A4, 0],
+        [NOTES.D5, NOTES.C5, NOTES.A4, 0, NOTES.G4, NOTES.A4, 0, NOTES.D4],
+        [NOTES.F5, 0, 0, NOTES.E5, NOTES.D5, NOTES.C5, NOTES.D5, 0],
+    ];
+    let melodyIndex = 0, melodyStep = 0, melodyPlaying = false;
+    
+    const playMelodyNote = () => {
+        if (!audioCtx || audioCtx.state !== 'running' || !melodyPlaying) return;
+        if (!section.lead) { melodyStep++; if (melodyStep >= 8) { melodyPlaying = false; } return; }
+        
+        const melody = melodies[melodyIndex % melodies.length];
+        const note = melody[melodyStep % 8];
+        if (note) {
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = note;
+            const osc2 = audioCtx.createOscillator();
+            osc2.type = 'triangle';
+            osc2.frequency.value = note * 0.999;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(2000 + 500 * section.intensity, now);
+            filter.frequency.exponentialRampToValueAtTime(500, now + BEAT * 0.65);
+            filter.Q.value = 2.5;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.05 * section.intensity, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + BEAT * 0.85);
+            
+            osc.connect(filter); osc2.connect(filter);
+            filter.connect(gain); gain.connect(musicCompressor);
+            osc.start(now); osc2.start(now);
+            osc.stop(now + BEAT); osc2.stop(now + BEAT);
+        }
+        melodyStep++;
+        if (melodyStep >= 8) { melodyPlaying = false; melodyIndex++; }
+    };
+    const triggerMelody = () => { melodyPlaying = true; melodyStep = 0; };
+    musicIntervals.push(setInterval(triggerMelody, BAR * 4 * 1000));
+    musicIntervals.push(setInterval(playMelodyNote, BEAT * 1000));
+    musicTimeouts.push(setTimeout(triggerMelody, BAR * 2 * 1000));
+    
+    // FX: Risers before drops
+    const playRiser = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        // Only play risers during builds
+        if (!section.name.includes('build')) return;
+        
+        const now = audioCtx.currentTime;
+        const bufferSize = audioCtx.sampleRate * BAR * 1.8;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(200, now);
+        filter.frequency.exponentialRampToValueAtTime(4000, now + BAR * 1.6);
+        filter.Q.value = 4;
+        
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.005, now);
+        gain.gain.exponentialRampToValueAtTime(0.07, now + BAR * 1.6);
+        gain.gain.setValueAtTime(0, now + BAR * 1.65);
+        
+        noise.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+        noise.start(now);
+    };
+    musicIntervals.push(setInterval(playRiser, BAR * 4 * 1000));
+    
+    // FX: Impact on drops
+    const playImpact = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        // Only on first beat of drops
+        if (!section.name.includes('drop') || barInSection !== 0) return;
+        
+        const now = audioCtx.currentTime;
+        
+        // Low boom
+        const boom = audioCtx.createOscillator();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(80, now);
+        boom.frequency.exponentialRampToValueAtTime(30, now + 0.5);
+        const boomGain = audioCtx.createGain();
+        boomGain.gain.setValueAtTime(0.4, now);
+        boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+        boom.connect(boomGain);
+        boomGain.connect(musicCompressor);
+        boom.start(now);
+        boom.stop(now + 0.8);
+        
+        // Noise crash
+        const bufferSize = audioCtx.sampleRate * 0.5;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        const nGain = audioCtx.createGain();
+        nGain.gain.setValueAtTime(0.15, now);
+        nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        noise.connect(nGain);
+        nGain.connect(musicCompressor);
+        noise.start(now);
+    };
+    musicIntervals.push(setInterval(playImpact, BAR * 1000));
+    
+    // Bells (only in certain sections)
+    let bellStep = 0;
+    const bellNotes = [NOTES.D5, 0, 0, NOTES.A4, 0, 0, NOTES.F5, 0, 0, NOTES.C5, 0, 0];
+    const playBell = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        // Bells only in drops and breaks
+        if (!section.name.includes('drop') && !section.name.includes('break')) { bellStep++; return; }
+        
+        const note = bellNotes[bellStep % bellNotes.length];
+        if (note) {
+            const now = audioCtx.currentTime;
+            const carrier = audioCtx.createOscillator();
+            carrier.type = 'sine';
+            carrier.frequency.value = note;
+            const modulator = audioCtx.createOscillator();
+            modulator.type = 'sine';
+            modulator.frequency.value = note * 2.4;
+            const modGain = audioCtx.createGain();
+            modGain.gain.setValueAtTime(note * 1.5, now);
+            modGain.gain.exponentialRampToValueAtTime(1, now + 0.6);
+            modulator.connect(modGain);
+            modGain.connect(carrier.frequency);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.025 * section.intensity, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+            carrier.connect(gain); gain.connect(musicCompressor);
+            carrier.start(now); modulator.start(now);
+            carrier.stop(now + 0.7); modulator.stop(now + 0.7);
+        }
+        bellStep++;
+    };
+    musicIntervals.push(setInterval(playBell, BEAT * 1000));
+    
+    // Stab accents (only on drops)
+    let stabBar = 0;
+    const playStab = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        stabBar++;
+        if (!section.name.includes('drop')) return;
+        if (stabBar % 4 !== 0) return;
+        
+        const now = audioCtx.currentTime;
+        const chord = CHORDS[(stabBar / 4) % CHORDS.length];
+        chord.forEach((freq) => {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq * 2;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(3000, now);
+            filter.frequency.exponentialRampToValueAtTime(400, now + 0.15);
+            filter.Q.value = 3;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            osc.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+            osc.start(now); osc.stop(now + 0.2);
+        });
+    };
+    musicIntervals.push(setInterval(playStab, BAR * 1000));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SIMPLE MUSIC (fewer layers, still dynamic arrangement)
+// ═══════════════════════════════════════════════════════════════════
+function startSimpleMusic() {
+    // Sub bass
+    const subBass = audioCtx.createOscillator();
+    subBass.type = 'sine';
+    subBass.frequency.value = NOTES.D2 / 2;
+    const subGain = audioCtx.createGain();
+    subGain.gain.value = 0.12;
+    subBass.connect(subGain);
+    subGain.connect(musicCompressor);
+    subBass.start();
+    musicNodes.push(subBass);
+    
+    // Kick (follows section)
+    const playKick = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.kick) return;
+        
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(120, now);
+        osc.frequency.exponentialRampToValueAtTime(35, now + 0.08);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.25 * section.intensity, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.connect(gain);
+        gain.connect(musicCompressor);
+        osc.start(now);
+        osc.stop(now + 0.2);
+    };
+    musicIntervals.push(setInterval(playKick, BEAT * 2 * 1000));
+    
+    // Bass line (changes with arrangement)
+    const bassNotes = [
+        [NOTES.D2, NOTES.D2, NOTES.F2, NOTES.G2],
+        [NOTES.Bb2, NOTES.A2, NOTES.G2, NOTES.F2],
+        [NOTES.D2, NOTES.G2, NOTES.A2, NOTES.G2],
+    ];
+    let bassStep = 0;
+    const playBass = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.bass) { bassStep++; return; }
+        
+        const now = audioCtx.currentTime;
+        const lineIdx = Math.floor(totalBars / 8) % bassNotes.length;
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = bassNotes[lineIdx][bassStep % 4];
+        bassStep++;
+        
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(300 + 200 * section.intensity, now);
+        filter.frequency.exponentialRampToValueAtTime(150, now + BEAT * 0.7);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.08 * section.intensity, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + BEAT * 0.85);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(musicCompressor);
+        osc.start(now);
+        osc.stop(now + BEAT);
+    };
+    musicIntervals.push(setInterval(playBass, BEAT * 1000));
+    
+    // Pad (changes chords)
+    let chordIdx = 0;
+    const playPad = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.pad) { chordIdx++; return; }
+        
+        const now = audioCtx.currentTime;
+        const chord = CHORDS[chordIdx % CHORDS.length];
+        chordIdx++;
+        
+        chord.forEach((freq) => {
+            const pad = audioCtx.createOscillator();
+            pad.type = 'triangle';
+            pad.frequency.value = freq;
+            const padFilter = audioCtx.createBiquadFilter();
+            padFilter.type = 'lowpass';
+            padFilter.frequency.value = 300 + 300 * section.intensity;
+            const padGain = audioCtx.createGain();
+            padGain.gain.setValueAtTime(0, now);
+            padGain.gain.linearRampToValueAtTime(0.025 * section.intensity, now + 0.2);
+            padGain.gain.setValueAtTime(0.025 * section.intensity, now + BAR * 1.5);
+            padGain.gain.linearRampToValueAtTime(0, now + BAR * 2);
+            pad.connect(padFilter);
+            padFilter.connect(padGain);
+            padGain.connect(musicCompressor);
+            pad.start(now);
+            pad.stop(now + BAR * 2);
+        });
+    };
+    musicIntervals.push(setInterval(playPad, BAR * 2 * 1000));
+    playPad();
+    
+    // Simple hi-hat (follows section)
+    let hatStep = 0;
+    const playHat = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.hat) { hatStep++; return; }
+        
+        hatStep++;
+        if (hatStep % 2 !== 0) return; // Every other 16th
+        
+        const now = audioCtx.currentTime;
+        const bufferSize = audioCtx.sampleRate * 0.03;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 8000;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.03 * section.intensity, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+        noise.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+        noise.start(now);
+    };
+    musicIntervals.push(setInterval(playHat, BEAT * 0.25 * 1000));
+    
+    // Simple lead (only in drops/breaks)
+    const leadNotes = [NOTES.D4, 0, NOTES.F4, NOTES.A4, 0, NOTES.G4, NOTES.F4, 0];
+    let leadStep = 0;
+    const playLead = () => {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        if (!section.lead) { leadStep++; return; }
+        
+        const note = leadNotes[leadStep % 8];
+        leadStep++;
+        if (!note) return;
+        
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = note;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1500, now);
+        filter.frequency.exponentialRampToValueAtTime(400, now + BEAT * 0.5);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.04 * section.intensity, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + BEAT * 0.7);
+        osc.connect(filter); filter.connect(gain); gain.connect(musicCompressor);
+        osc.start(now); osc.stop(now + BEAT);
+    };
+    musicIntervals.push(setInterval(playLead, BEAT * 1000));
+}
+
+function stopMusic() {
+    musicNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+    musicNodes = [];
+    musicIntervals.forEach(i => clearInterval(i));
+    musicIntervals = [];
+    musicTimeouts.forEach(t => clearTimeout(t));
+    musicTimeouts = [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOUND EFFECTS
+// ═══════════════════════════════════════════════════════════════════
+function playSound(type, options = {}) {
+    if (!audioCtx || !audioInitialized || audioCtx.state !== 'running') return;
+    
+    const now = audioCtx.currentTime;
+    const vol = options.volume || 1;
+    const pan = options.pan || 0; // -1 to 1
+    
+    // Create panner
+    const panner = audioCtx.createStereoPanner();
+    panner.pan.value = pan;
+    panner.connect(sfxGain);
+    
+    switch(type) {
+        case 'collect': {
+            // Magical chime - pitch based on options.pitch
+            const pitch = options.pitch || 1;
+            const baseFreq = 440 * pitch;
+            
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(baseFreq, now);
+            osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.1);
+            
+            const osc2 = audioCtx.createOscillator();
+            osc2.type = 'triangle';
+            osc2.frequency.setValueAtTime(baseFreq * 2, now);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.15 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            
+            osc.connect(gain);
+            osc2.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc2.start(now);
+            osc.stop(now + 0.25);
+            osc2.stop(now + 0.25);
+            break;
+        }
+        
+        case 'chain': {
+            // Rising arpeggio for chain collection
+            const baseFreq = 330;
+            for (let i = 0; i < 4; i++) {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = baseFreq * Math.pow(1.25, i);
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0, now + i * 0.06);
+                gain.gain.linearRampToValueAtTime(0.1 * vol, now + i * 0.06 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.2);
+                osc.connect(gain);
+                gain.connect(panner);
+                osc.start(now + i * 0.06);
+                osc.stop(now + i * 0.06 + 0.2);
+            }
+            break;
+        }
+        
+        case 'bolt': {
+            // Quick zap
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(3000, now);
+            filter.frequency.exponentialRampToValueAtTime(500, now + 0.1);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.2 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.12);
+            
+            // Add noise burst
+            const noise = createNoise(0.08);
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.08 * vol, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+            noise.connect(noiseGain);
+            noiseGain.connect(panner);
+            break;
+        }
+        
+        case 'lance': {
+            // Heavy whoosh + impact
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.exponentialRampToValueAtTime(80, now + 0.2);
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 400;
+            filter.Q.value = 4;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.25 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.25);
+            
+            // Sub thump
+            const sub = audioCtx.createOscillator();
+            sub.type = 'sine';
+            sub.frequency.value = 60;
+            const subGain = audioCtx.createGain();
+            subGain.gain.setValueAtTime(0.3 * vol, now);
+            subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            sub.connect(subGain);
+            subGain.connect(panner);
+            sub.start(now);
+            sub.stop(now + 0.2);
+            break;
+        }
+        
+        case 'ward': {
+            // Protective shimmer - rising tone with reverb feel
+            const freqs = [220, 330, 440, 550];
+            freqs.forEach((f, i) => {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = f;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0, now + i * 0.05);
+                gain.gain.linearRampToValueAtTime(0.08 * vol, now + i * 0.05 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                osc.connect(gain);
+                gain.connect(panner);
+                osc.start(now + i * 0.05);
+                osc.stop(now + 0.5);
+            });
+            break;
+        }
+        
+        case 'siphon': {
+            // Draining sound - descending with warble
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(150, now + 0.4);
+            
+            const lfo = audioCtx.createOscillator();
+            lfo.frequency.value = 20;
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 50;
+            lfo.connect(lfoGain);
+            lfoGain.connect(osc.frequency);
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 400;
+            filter.Q.value = 3;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.15 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            lfo.start(now);
+            osc.stop(now + 0.4);
+            lfo.stop(now + 0.4);
+            break;
+        }
+        
+        case 'drain': {
+            // Energy being stolen - reverse siphon sound
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(500, now + 0.3);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.12 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            
+            osc.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.35);
+            break;
+        }
+        
+        case 'hit': {
+            // Impact on life bar
+            const osc = audioCtx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(50, now + 0.15);
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 300;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.3 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.2);
+            
+            // Noise thump
+            const noise = createNoise(0.15);
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'lowpass';
+            noiseFilter.frequency.value = 200;
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.2 * vol, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+            noise.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(panner);
+            break;
+        }
+        
+        case 'barrier_hit': {
+            // Barrier taking damage
+            const osc = audioCtx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.15 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+            
+            osc.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.15);
+            break;
+        }
+        
+        case 'barrier_break': {
+            // Barrier destroyed - shattering
+            const noise = createNoise(0.3);
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(2000, now);
+            filter.frequency.exponentialRampToValueAtTime(500, now + 0.3);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.25 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            
+            // Glass-like tones
+            [800, 1200, 1600].forEach((f, i) => {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = f;
+                const g = audioCtx.createGain();
+                g.gain.setValueAtTime(0.08 * vol, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.2 - i * 0.03);
+                osc.connect(g);
+                g.connect(panner);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            });
+            break;
+        }
+        
+        case 'ring': {
+            // Ring rotation - subtle stone grinding
+            const noise = createNoise(0.1);
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 300;
+            filter.Q.value = 2;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.05 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            break;
+        }
+        
+        case 'victory': {
+            // Triumphant chord
+            const chord = [220, 277.18, 329.63, 440]; // A minor chord
+            chord.forEach((f, i) => {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = f;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0, now + i * 0.1);
+                gain.gain.linearRampToValueAtTime(0.12 * vol, now + i * 0.1 + 0.1);
+                gain.gain.setTargetAtTime(0.001, now + 1.5, 0.3);
+                osc.connect(gain);
+                gain.connect(panner);
+                osc.start(now + i * 0.1);
+                osc.stop(now + 2);
+            });
+            break;
+        }
+        
+        case 'defeat': {
+            // Descending doom
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 1);
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 300;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.2 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 1.2);
+            break;
+        }
+        
+        case 'no_energy': {
+            // Failed cast - dull thud
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = 100;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.1 * vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.connect(gain);
+            gain.connect(panner);
+            osc.start(now);
+            osc.stop(now + 0.1);
+            break;
+        }
+    }
+}
+
+function createNoise(duration) {
+    const bufferSize = audioCtx.sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    noise.start();
+    return noise;
+}
+
+// Calculate pan based on position (-1 left, 1 right)
+function getPan(x) {
+    return (x - CENTER) / CENTER * 0.7;
+}
+</script>
+
+<script>
+const SIZE = 720, CENTER = SIZE / 2;
+const R = { eye: 40, inner: 95, ring: 155, ringW: 24, spell: 225, cast: 275, life: 330, lifeW: 12, outer: 355 };
+
+const COL = {
+    bg: '#06060a',
+    p1: { pri: '#e85a3c', sec: '#ff9872', glow: 'rgba(232, 90, 60, 0.6)', dim: 'rgba(232, 90, 60, 0.12)', name: 'EMBER' },
+    p2: { pri: '#3c8ee8', sec: '#72b8ff', glow: 'rgba(60, 142, 232, 0.6)', dim: 'rgba(60, 142, 232, 0.12)', name: 'FROST' },
+    energy: '#d4d0c4',
+    glow: 'rgba(212, 208, 196, 0.8)',
+    ring: '#2a2a32',  // Brighter so it's always visible
+    rune: '#6a5c8a'
+};
+
+// SPELLS - All make sense with aim mechanic
+const SPELLS = [
+    { id: 'bolt', name: 'BOLT', cost: 1, type: 'projectile', speed: 9, damage: 12, desc: 'Swift strike' },
+    { id: 'lance', name: 'LANCE', cost: 2, type: 'projectile', speed: 5, damage: 25, desc: 'Breaks barriers' },
+    { id: 'ward', name: 'WARD', cost: 2, type: 'ward', duration: 3, desc: 'New barrier' },
+    { id: 'siphon', name: 'SIPHON', cost: 1, type: 'beam', steal: 2, desc: 'Drain power' }
+];
+
+const state = {
+    running: false, time: 0,
+    players: [
+        { id: 0, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 1.5, barriers: [], flash: 0, eFlash: 0 },
+        { id: 1, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 0.5, barriers: [], flash: 0, eFlash: 0 }
+    ],
+    ring: { angle: 0, target: 0, walls: [{ s: -0.3, e: 0.3 }, { s: Math.PI - 0.3, e: Math.PI + 0.3 }] },
+    orbs: [], projectiles: [], beams: [], particles: [], effects: [],
+    pointers: new Map(), // Multi-touch: pointerId -> pointer data
+    runes: [], arcs: []
+};
+
+// Legacy single pointer for rendering compatibility
+Object.defineProperty(state, 'pointer', {
+    get() { return state.pointers.size > 0 ? state.pointers.values().next().value : null; }
+});
+
+const bgCanvas = document.getElementById('bgCanvas');
+const mainCanvas = document.getElementById('mainCanvas');
+const fxCanvas = document.getElementById('fxCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+const ctx = mainCanvas.getContext('2d');
+const fxCtx = fxCanvas.getContext('2d');
+
+bgCanvas.width = mainCanvas.width = fxCanvas.width = SIZE;
+bgCanvas.height = mainCanvas.height = fxCanvas.height = SIZE;
+
+// ═══════════════════════════════════════════════════════════════════
+// CRT NOISE ANIMATION
+// ═══════════════════════════════════════════════════════════════════
+const crtNoiseCanvas = document.getElementById('crtNoiseCanvas');
+const crtNoiseCtx = crtNoiseCanvas.getContext('2d');
+crtNoiseCanvas.width = 180; // Low res for performance
+crtNoiseCanvas.height = 180;
+
+function updateCRTNoise() {
+    if (PERF_MODE) return; // Skip noise in perf mode
+    const w = crtNoiseCanvas.width;
+    const h = crtNoiseCanvas.height;
+    const imageData = crtNoiseCtx.createImageData(w, h);
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+        const v = Math.random() * 255;
+        data[i] = v;     // R
+        data[i+1] = v;   // G
+        data[i+2] = v;   // B
+        data[i+3] = 255; // A
+    }
+    
+    crtNoiseCtx.putImageData(imageData, 0, 0);
+}
+
+// Update noise every few frames for subtle static effect
+setInterval(updateCRTNoise, PERF_MODE ? 500 : 100);
+if (!PERF_MODE) updateCRTNoise();
+
+// ═══════════════════════════════════════════════════════════════════
+// PROCEDURAL SIGIL GENERATION
+// ═══════════════════════════════════════════════════════════════════
+function drawSigil(ctx, type, x, y, size, color, alpha = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = size * 0.06;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    const s = size * 0.4;
+    
+    switch(type) {
+        case 'bolt': // Three converging lines with central point
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+                const a = i * Math.PI * 2 / 3 - Math.PI / 2;
+                ctx.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+                ctx.lineTo(Math.cos(a + Math.PI) * s * 0.3, Math.sin(a + Math.PI) * s * 0.3);
+            }
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+            
+        case 'lance': // Heavy geometric - square with diagonals and circle
+            ctx.beginPath();
+            ctx.rect(-s * 0.7, -s * 0.7, s * 1.4, s * 1.4);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-s * 0.7, -s * 0.7); ctx.lineTo(s * 0.7, s * 0.7);
+            ctx.moveTo(s * 0.7, -s * 0.7); ctx.lineTo(-s * 0.7, s * 0.7);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2);
+            ctx.stroke();
+            break;
+            
+        case 'ward': // Protective - nested arcs with cross
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.9, Math.PI * 0.2, Math.PI * 0.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.9, Math.PI * 1.2, Math.PI * 1.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -s * 0.35); ctx.lineTo(0, s * 0.35);
+            ctx.moveTo(-s * 0.35, 0); ctx.lineTo(s * 0.35, 0);
+            ctx.stroke();
+            break;
+            
+        case 'siphon': // Spiral with radiating dots
+            ctx.beginPath();
+            for (let i = 0; i < 40; i++) {
+                const t = i / 40;
+                const a = t * Math.PI * 3;
+                const r = s * 0.2 + t * s * 0.6;
+                if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+                else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            }
+            ctx.stroke();
+            for (let i = 0; i < 6; i++) {
+                const a = i * Math.PI / 3;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * s * 0.85, Math.sin(a) * s * 0.85, s * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            break;
+    }
+    
+    ctx.restore();
+}
+
+// Draw a decorative rune for background
+function drawRune(ctx, seed, x, y, size, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(seed * Math.PI);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = COL.rune;
+    ctx.lineWidth = 1;
+    
+    const s = size * 0.4;
+    const type = Math.floor(seed * 8) % 8;
+    
+    ctx.beginPath();
+    switch(type) {
+        case 0: // Circle with dot
+            ctx.arc(0, 0, s, 0, Math.PI * 2);
+            ctx.moveTo(s * 0.2, 0);
+            ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2);
+            break;
+        case 1: // Triangle
+            ctx.moveTo(0, -s); ctx.lineTo(s * 0.866, s * 0.5); ctx.lineTo(-s * 0.866, s * 0.5); ctx.closePath();
+            break;
+        case 2: // Cross
+            ctx.moveTo(0, -s); ctx.lineTo(0, s);
+            ctx.moveTo(-s, 0); ctx.lineTo(s, 0);
+            break;
+        case 3: // Diamond
+            ctx.moveTo(0, -s); ctx.lineTo(s, 0); ctx.lineTo(0, s); ctx.lineTo(-s, 0); ctx.closePath();
+            break;
+        case 4: // Three lines
+            for (let i = 0; i < 3; i++) {
+                const a = i * Math.PI * 2 / 3 - Math.PI / 2;
+                ctx.moveTo(0, 0);
+                ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+            }
+            break;
+        case 5: // Eye shape
+            ctx.ellipse(0, 0, s, s * 0.5, 0, 0, Math.PI * 2);
+            ctx.moveTo(s * 0.25, 0);
+            ctx.arc(0, 0, s * 0.25, 0, Math.PI * 2);
+            break;
+        case 6: // Crescent
+            ctx.arc(0, 0, s, 0, Math.PI);
+            ctx.arc(s * 0.3, 0, s * 0.7, Math.PI, 0, true);
+            break;
+        case 7: // Star
+            for (let i = 0; i < 4; i++) {
+                const a = i * Math.PI / 2;
+                ctx.moveTo(0, 0);
+                ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+                ctx.moveTo(Math.cos(a + Math.PI/4) * s * 0.5, Math.sin(a + Math.PI/4) * s * 0.5);
+            }
+            break;
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+function ang(x, y) { return Math.atan2(y - CENTER, x - CENTER); }
+function normAng(a) { while(a < 0) a += Math.PI*2; while(a >= Math.PI*2) a -= Math.PI*2; return a; }
+function angDiff(a1, a2) { let d = normAng(a2-a1); if(d > Math.PI) d -= Math.PI*2; return d; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function inZone(x, y, pid) { return Math.abs(angDiff(ang(x,y), state.players[pid].angle)) < Math.PI/2; }
+
+function getPlayer(x, y) {
+    const d = dist(x, y, CENTER, CENTER);
+    if (d < R.inner || d > R.outer) return -1;
+    return inZone(x, y, 0) ? 0 : 1;
+}
+
+function getSpellBtns(pid) {
+    const p = state.players[pid];
+    const btns = [];
+    const spread = Math.PI * 0.55;
+    SPELLS.forEach((spell, i) => {
+        const a = p.angle - spread/2 + (i + 0.5) / SPELLS.length * spread;
+        btns.push({ x: CENTER + Math.cos(a) * R.spell, y: CENTER + Math.sin(a) * R.spell, a, spell, r: 26 });
+    });
+    return btns;
+}
+
+function getBtnAt(x, y, pid) {
+    for (const b of getSpellBtns(pid)) {
+        if (dist(x, y, b.x, b.y) < b.r + 8) return b;
+    }
+    return null;
+}
+
+function inRing(x, y) {
+    const d = dist(x, y, CENTER, CENTER);
+    return d > R.ring - R.ringW && d < R.ring + R.ringW;
+}
+
+// Generate random barriers for a player
+function generateBarriers(pid) {
+    const p = state.players[pid];
+    const barriers = [];
+    const numBarriers = 3 + Math.floor(Math.random() * 2); // 3-4 barriers
+    const usedAngles = [];
+    
+    for (let i = 0; i < numBarriers; i++) {
+        // Random angle within player's zone (but not too close to center or edges)
+        let ang;
+        let attempts = 0;
+        do {
+            ang = p.angle + (Math.random() - 0.5) * Math.PI * 0.7;
+            attempts++;
+        } while (usedAngles.some(a => Math.abs(angDiff(a, ang)) < 0.25) && attempts < 20);
+        
+        usedAngles.push(ang);
+        
+        // Random radius between cast zone and life ring
+        const radius = R.cast + 20 + Math.random() * (R.life - R.cast - 50);
+        
+        // Random size (arc length)
+        const size = 0.15 + Math.random() * 0.15; // Arc span in radians
+        
+        barriers.push({
+            ang: ang,
+            radius: radius,
+            size: size,
+            hp: 2, // Takes 2 hits to destroy
+            maxHp: 2,
+            flash: 0,
+            seed: Math.random() // For visual variation
+        });
+    }
+    
+    return barriers;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BACKGROUND
+// ═══════════════════════════════════════════════════════════════════
+function genBackground() {
+    state.runes = [];
+    const numRunes = PERF_MODE ? MAX_RUNES : 50;
+    for (let i = 0; i < numRunes; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = R.inner + 20 + Math.random() * (R.outer - R.inner - 40);
+        state.runes.push({
+            x: CENTER + Math.cos(a) * r, y: CENTER + Math.sin(a) * r,
+            seed: Math.random(), size: 10 + Math.random() * 14,
+            alpha: 0.02 + Math.random() * 0.04, phase: Math.random() * Math.PI * 2
+        });
+    }
+    drawBackground();
+}
+
+function drawBackground() {
+    const c = bgCtx;
+    
+    // Deep gradient
+    const bg = c.createRadialGradient(CENTER, CENTER, 0, CENTER, CENTER, R.outer);
+    bg.addColorStop(0, '#0a0a10');
+    bg.addColorStop(0.6, '#06060a');
+    bg.addColorStop(1, '#030306');
+    c.fillStyle = bg;
+    c.fillRect(0, 0, SIZE, SIZE);
+    
+    c.save();
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.clip();
+    
+    // Subtle concentric circles
+    c.strokeStyle = 'rgba(100, 90, 130, 0.04)';
+    c.lineWidth = 1;
+    for (let r = 50; r < R.outer; r += 30) {
+        c.beginPath();
+        c.arc(CENTER, CENTER, r, 0, Math.PI * 2);
+        c.stroke();
+    }
+    
+    // Main structure circles
+    c.strokeStyle = 'rgba(100, 90, 130, 0.08)';
+    [R.eye, R.inner, R.ring, R.cast, R.life].forEach(r => {
+        c.beginPath();
+        c.arc(CENTER, CENTER, r, 0, Math.PI * 2);
+        c.stroke();
+    });
+    
+    // 12 radial lines
+    c.strokeStyle = 'rgba(100, 90, 130, 0.05)';
+    for (let i = 0; i < 12; i++) {
+        const a = i * Math.PI / 6;
+        c.beginPath();
+        c.moveTo(CENTER + Math.cos(a) * R.eye, CENTER + Math.sin(a) * R.eye);
+        c.lineTo(CENTER + Math.cos(a) * R.outer, CENTER + Math.sin(a) * R.outer);
+        c.stroke();
+    }
+    
+    // Player zone washes
+    c.globalAlpha = 0.04;
+    const g1 = c.createRadialGradient(CENTER, CENTER - 180, 0, CENTER, CENTER - 180, 300);
+    g1.addColorStop(0, COL.p1.pri);
+    g1.addColorStop(1, 'transparent');
+    c.fillStyle = g1;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, Math.PI, Math.PI * 2);
+    c.lineTo(CENTER, CENTER);
+    c.fill();
+    
+    const g2 = c.createRadialGradient(CENTER, CENTER + 180, 0, CENTER, CENTER + 180, 300);
+    g2.addColorStop(0, COL.p2.pri);
+    g2.addColorStop(1, 'transparent');
+    c.fillStyle = g2;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI);
+    c.lineTo(CENTER, CENTER);
+    c.fill();
+    
+    c.globalAlpha = 1;
+    c.restore();
+    
+    // Border
+    c.strokeStyle = '#151518';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPELLS
+// ═══════════════════════════════════════════════════════════════════
+function cast(pid, spellId, aimAng, sx, sy, endX, endY, dragDist) {
+    const p = state.players[pid];
+    const opp = state.players[1-pid];
+    const spell = SPELLS.find(s => s.id === spellId);
+    const col = pid === 0 ? COL.p1 : COL.p2;
+    
+    if (p.energy < spell.cost) {
+        for (let i = 0; i < 6; i++) {
+            const a = Math.random() * Math.PI * 2;
+            state.particles.push({ x: sx, y: sy, vx: Math.cos(a)*2, vy: Math.sin(a)*2, life: 0.3, col: '#333', size: 2 });
+        }
+        playSound('no_energy', { pan: getPan(sx) });
+        return false;
+    }
+    
+    p.energy -= spell.cost;
+    
+    // Cast effect
+    state.effects.push({ x: sx, y: sy, type: 'cast', col: col.pri, life: 1 });
+    for (let i = 0; i < 20; i++) {
+        const a = aimAng + (Math.random() - 0.5) * 0.6;
+        const v = 2 + Math.random() * 4;
+        state.particles.push({ x: sx, y: sy, vx: Math.cos(a)*v, vy: Math.sin(a)*v, life: 0.4, col: col.pri, size: 2 + Math.random()*2 });
+    }
+    
+    switch(spell.type) {
+        case 'projectile':
+            state.projectiles.push({
+                x: sx, y: sy, ang: aimAng, speed: spell.speed, dmg: spell.damage,
+                pid, heavy: spellId === 'lance', trail: [], life: 1
+            });
+            playSound(spellId === 'lance' ? 'lance' : 'bolt', { pan: getPan(sx) });
+            break;
+            
+        case 'ward':
+            // Create a defensive barrier WHERE you aim within your zone
+            // The barrier appears at the angle you drag toward
+            let wardAng = aimAng;
+            
+            // Clamp angle to player's zone
+            const maxDeviation = Math.PI * 0.45;
+            const deviation = angDiff(p.angle, wardAng);
+            if (Math.abs(deviation) > maxDeviation) {
+                wardAng = p.angle + Math.sign(deviation) * maxDeviation;
+            }
+            
+            // Radius based on where you're pointing
+            // Calculate where the aim ray intersects the valid barrier zone
+            const minR = R.cast + 15;
+            const maxR = R.life - 20;
+            
+            // Use the endpoint distance from center as basis
+            const endDistFromCenter = dist(endX, endY, CENTER, CENTER);
+            let wardRadius;
+            
+            if (endDistFromCenter < minR) {
+                wardRadius = minR + Math.random() * 20;
+            } else if (endDistFromCenter > maxR) {
+                wardRadius = maxR - Math.random() * 20;
+            } else {
+                // Place at roughly where the drag ended (in the valid zone)
+                wardRadius = endDistFromCenter + (Math.random() - 0.5) * 15;
+            }
+            wardRadius = Math.max(minR, Math.min(maxR, wardRadius));
+            
+            // Add as permanent barrier
+            p.barriers.push({
+                ang: wardAng,
+                radius: wardRadius,
+                size: 0.16 + Math.random() * 0.06,
+                hp: 2,
+                maxHp: 2,
+                flash: 1,
+                seed: Math.random()
+            });
+            
+            // Creation effect at actual barrier location
+            const wx = CENTER + Math.cos(wardAng) * wardRadius;
+            const wy = CENTER + Math.sin(wardAng) * wardRadius;
+            state.effects.push({ x: wx, y: wy, type: 'ward', col: col.sec, life: 1 });
+            playSound('ward', { pan: getPan(wx) });
+            
+            // Particles forming the barrier
+            for (let i = 0; i < 25; i++) {
+                const pa = wardAng + (Math.random() - 0.5) * 0.4;
+                const pr = wardRadius + (Math.random() - 0.5) * 20;
+                const px = CENTER + Math.cos(pa) * pr;
+                const py = CENTER + Math.sin(pa) * pr;
+                state.particles.push({ 
+                    x: px, y: py, 
+                    vx: (Math.random() - 0.5) * 2, 
+                    vy: (Math.random() - 0.5) * 2, 
+                    life: 0.5 + Math.random() * 0.3, 
+                    col: col.sec, 
+                    size: 3 + Math.random() * 3 
+                });
+            }
+            break;
+            
+        case 'beam':
+            // Instant beam attack - check for hit first
+            let hitX = null, hitY = null, didHit = false;
+            let hitBarrier = false;
+            const beamEndX = sx + Math.cos(aimAng) * 400;
+            const beamEndY = sy + Math.sin(aimAng) * 400;
+            
+            // Sample along beam to find hit point
+            for (let t = 0; t < 1 && !hitBarrier; t += 0.02) {
+                const bx = lerp(sx, beamEndX, t);
+                const by = lerp(sy, beamEndY, t);
+                const bd = dist(bx, by, CENTER, CENTER);
+                const ba = ang(bx, by);
+                
+                // Check barrier collision first
+                state.players.forEach((pl, idx) => {
+                    pl.barriers.forEach(bar => {
+                        if (bar.hp <= 0 || hitBarrier) return;
+                        const barDist = Math.abs(bd - bar.radius);
+                        const barAngDiff = Math.abs(angDiff(ba, bar.ang));
+                        
+                        if (barDist < 15 && barAngDiff < bar.size + 0.03) {
+                            hitBarrier = true;
+                            hitX = bx;
+                            hitY = by;
+                            // Beam blocked by barrier - damage it
+                            bar.hp--;
+                            bar.flash = 1;
+                            const barCol = idx === 0 ? COL.p1 : COL.p2;
+                            
+                            if (bar.hp <= 0) {
+                                playSound('barrier_break', { pan: getPan(bx) });
+                                for (let i = 0; i < 25; i++) {
+                                    const a = Math.random() * Math.PI * 2;
+                                    state.particles.push({ x: bx, y: by, vx: Math.cos(a)*5, vy: Math.sin(a)*5, life: 0.5, col: barCol.pri, size: 3 });
+                                }
+                            } else {
+                                playSound('barrier_hit', { pan: getPan(bx) });
+                                for (let i = 0; i < 12; i++) {
+                                    const a = Math.random() * Math.PI * 2;
+                                    state.particles.push({ x: bx, y: by, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.3, col: barCol.sec, size: 2 });
+                                }
+                            }
+                        }
+                    });
+                });
+                
+                if (!hitBarrier && bd > R.cast && bd < R.life + 20 && inZone(bx, by, 1-pid)) {
+                    hitX = bx;
+                    hitY = by;
+                    didHit = true;
+                    // Steal energy
+                    const stolen = Math.min(spell.steal, opp.energy);
+                    opp.energy -= stolen;
+                    p.energy = Math.min(p.maxEnergy, p.energy + stolen);
+                    p.eFlash = 1;
+                    break;
+                }
+            }
+            
+            // Create outgoing beam
+            state.beams.push({
+                sx, sy, ang: aimAng, pid, life: 0.3,
+                length: hitX ? dist(sx, sy, hitX, hitY) : R.outer,
+                type: 'attack'
+            });
+            playSound('siphon', { pan: getPan(sx) });
+            
+            // If hit player (not barrier), create drain beam coming back
+            if (didHit && hitX && !hitBarrier) {
+                state.beams.push({
+                    sx: hitX, sy: hitY,
+                    ex: sx, ey: sy,
+                    pid, life: 1.2,
+                    type: 'drain',
+                    fromCol: 1 - pid, // Color of victim
+                    toCol: pid // Color of stealer
+                });
+                
+                playSound('drain', { pan: getPan(hitX) });
+                
+                // Particles at hit point
+                for (let i = 0; i < 20; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    state.particles.push({ x: hitX, y: hitY, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.4, col: COL.energy, size: 3 });
+                }
+                
+                // Particles flowing back to caster
+                const oppCol = (1 - pid) === 0 ? COL.p1 : COL.p2;
+                for (let i = 0; i < 12; i++) {
+                    const delay = i * 0.05;
+                    setTimeout(() => {
+                        const dx = sx - hitX, dy = sy - hitY;
+                        const d = Math.sqrt(dx*dx + dy*dy);
+                        state.particles.push({
+                            x: hitX + (Math.random() - 0.5) * 10,
+                            y: hitY + (Math.random() - 0.5) * 10,
+                            vx: (dx / d) * 8,
+                            vy: (dy / d) * 8,
+                            life: 0.6,
+                            col: i < 4 ? oppCol.pri : (i < 8 ? COL.energy : col.pri),
+                            size: 4 + Math.random() * 3
+                        });
+                    }, delay * 1000);
+                }
+                
+                // Burst effect at caster when energy arrives
+                setTimeout(() => {
+                    for (let i = 0; i < 15; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        state.particles.push({
+                            x: sx + (Math.random() - 0.5) * 10,
+                            y: sy + (Math.random() - 0.5) * 10,
+                            vx: Math.cos(a) * 4,
+                            vy: Math.sin(a) * 4,
+                            life: 0.5,
+                            col: col.sec,
+                            size: 4 + Math.random() * 3
+                        });
+                    }
+                    state.effects.push({ x: sx, y: sy, type: 'absorb', col: col.pri, life: 1 });
+                }, 400);
+            }
+            break;
+    }
+    
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ORB COLLECTION WITH CHAINS
+// ═══════════════════════════════════════════════════════════════════
+function collectOrbs(x, y, pid) {
+    const p = state.players[pid];
+    const col = pid === 0 ? COL.p1 : COL.p2;
+    
+    const toCollect = [];
+    const checked = new Set();
+    
+    function chain(orb) {
+        if (checked.has(orb) || orb.dead) return;
+        if (!inZone(orb.x, orb.y, pid)) return;
+        checked.add(orb);
+        toCollect.push(orb);
+        state.orbs.forEach(o => {
+            if (!checked.has(o) && !o.dead && dist(orb.x, orb.y, o.x, o.y) < 100) chain(o);
+        });
+    }
+    
+    state.orbs.forEach(o => {
+        if (!o.dead && dist(x, y, o.x, o.y) < 40) chain(o);
+    });
+    
+    let got = 0;
+    toCollect.forEach((o, i) => {
+        if (p.energy < p.maxEnergy) {
+            o.dead = true;
+            p.energy++;
+            got++;
+            const orbCol = o.color;
+            const pitch = 0.8 + Math.random() * 0.4;
+            setTimeout(() => {
+                playSound('collect', { pan: getPan(o.x), pitch: pitch + i * 0.1 });
+                for (let j = 0; j < 15; j++) {
+                    const a = Math.random() * Math.PI * 2;
+                    state.particles.push({ x: o.x, y: o.y, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.4, col: orbCol.mid, size: 3 });
+                }
+                if (i < toCollect.length - 1) {
+                    const next = toCollect[i+1];
+                    for (let j = 0; j < 4; j++) {
+                        const t = j / 4;
+                        state.particles.push({ x: lerp(o.x, next.x, t), y: lerp(o.y, next.y, t), vx: 0, vy: 0, life: 0.25, col: orbCol.outer, size: 2 });
+                    }
+                }
+            }, i * 40);
+        }
+    });
+    
+    if (got > 1) {
+        setTimeout(() => playSound('chain'), got * 40);
+    }
+    
+    if (got > 0) p.eFlash = 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INPUT - Multi-touch support for two players
+// ═══════════════════════════════════════════════════════════════════
+function getCoords(e) {
+    const rect = mainCanvas.getBoundingClientRect();
+    const cx = e.clientX ?? 0;
+    const cy = e.clientY ?? 0;
+    return { x: (cx - rect.left) / rect.width * SIZE, y: (cy - rect.top) / rect.height * SIZE };
+}
+
+function onStart(pointerId, x, y) {
+    if (!state.running) return;
+
+    if (inRing(x, y)) {
+        state.pointers.set(pointerId, { type: 'ring', startAng: state.ring.angle, touchAng: ang(x, y) });
+        return;
+    }
+
+    const pid = getPlayer(x, y);
+    if (pid >= 0) {
+        const btn = getBtnAt(x, y, pid);
+        if (btn) {
+            state.pointers.set(pointerId, { type: 'spell', pid, spell: btn.spell, sx: btn.x, sy: btn.y, x, y });
+        } else {
+            collectOrbs(x, y, pid);
+            state.pointers.set(pointerId, { type: 'collect', pid });
+        }
+    }
+}
+
+function onMove(pointerId, x, y) {
+    if (!state.running) return;
+    const ptr = state.pointers.get(pointerId);
+    if (!ptr) return;
+
+    if (ptr.type === 'ring') {
+        state.ring.target = ptr.startAng + (ang(x, y) - ptr.touchAng);
+    } else if (ptr.type === 'spell') {
+        ptr.x = x; ptr.y = y;
+    } else if (ptr.type === 'collect') {
+        collectOrbs(x, y, ptr.pid);
+    }
+}
+
+function onEnd(pointerId, x, y) {
+    if (!state.running) return;
+    const ptr = state.pointers.get(pointerId);
+    if (!ptr) return;
+
+    if (ptr.type === 'spell') {
+        const dx = x - ptr.sx, dy = y - ptr.sy;
+        const dragDist = Math.sqrt(dx*dx + dy*dy);
+        if (dragDist > 25) {
+            cast(ptr.pid, ptr.spell.id, Math.atan2(dy, dx), ptr.sx, ptr.sy, x, y, dragDist);
+        }
+    }
+
+    state.pointers.delete(pointerId);
+}
+
+// Pointer events support multi-touch via pointerId
+mainCanvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    mainCanvas.setPointerCapture(e.pointerId);
+    const {x,y} = getCoords(e);
+    onStart(e.pointerId, x, y);
+});
+mainCanvas.addEventListener('pointermove', e => {
+    e.preventDefault();
+    const {x,y} = getCoords(e);
+    onMove(e.pointerId, x, y);
+});
+mainCanvas.addEventListener('pointerup', e => {
+    e.preventDefault();
+    const {x,y} = getCoords(e);
+    onEnd(e.pointerId, x, y);
+});
+mainCanvas.addEventListener('pointercancel', e => {
+    state.pointers.delete(e.pointerId);
+});
+mainCanvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ═══════════════════════════════════════════════════════════════════
+// UPDATES
+// ═══════════════════════════════════════════════════════════════════
+function spawnOrb() {
+    const a = Math.random() * Math.PI * 2;
+    
+    // Varying orb colors - magical/ethereal palette
+    const orbColors = [
+        { core: '#e8e4d8', mid: '#d4c8f0', outer: '#9a8ac8', glow: 'rgba(212, 200, 240, 0.6)' }, // Lavender
+        { core: '#ffe8d8', mid: '#ffb890', outer: '#d87850', glow: 'rgba(255, 184, 144, 0.6)' }, // Amber
+        { core: '#d8ffe8', mid: '#90ffb8', outer: '#50d878', glow: 'rgba(144, 255, 184, 0.6)' }, // Mint
+        { core: '#d8f0ff', mid: '#90d0ff', outer: '#5090d8', glow: 'rgba(144, 208, 255, 0.6)' }, // Azure
+        { core: '#ffd8f0', mid: '#ff90c0', outer: '#d85090', glow: 'rgba(255, 144, 192, 0.6)' }, // Rose
+        { core: '#fff8d8', mid: '#ffe870', outer: '#d8b030', glow: 'rgba(255, 232, 112, 0.6)' }, // Gold
+        { core: '#f0d8ff', mid: '#c890ff', outer: '#9050d8', glow: 'rgba(200, 144, 255, 0.6)' }, // Violet
+        { core: '#d8fff8', mid: '#70ffe8', outer: '#30d8c0', glow: 'rgba(112, 255, 232, 0.6)' }  // Cyan
+    ];
+    const color = orbColors[Math.floor(Math.random() * orbColors.length)];
+    
+    state.orbs.push({ 
+        x: CENTER + Math.cos(a) * R.eye, 
+        y: CENTER + Math.sin(a) * R.eye, 
+        a, r: R.eye, 
+        speed: 28 + Math.random() * 18, 
+        life: 1, 
+        dead: false, 
+        phase: Math.random() * Math.PI * 2,
+        color: color
+    });
+}
+
+function update(dt) {
+    state.time += dt;
+    
+    // Orbs (in-place removal)
+    for (let i = state.orbs.length - 1; i >= 0; i--) {
+        const o = state.orbs[i];
+        if (o.dead || o.life <= 0 || o.r >= R.life) {
+            state.orbs.splice(i, 1);
+            continue;
+        }
+        o.r += o.speed * dt;
+        o.x = CENTER + Math.cos(o.a) * o.r;
+        o.y = CENTER + Math.sin(o.a) * o.r;
+        if (o.r > R.cast) o.life -= dt * 1.5;
+    }
+    
+    // Arc connections between orbs
+    state.arcs = [];
+    for (let i = 0; i < state.orbs.length; i++) {
+        for (let j = i+1; j < state.orbs.length; j++) {
+            const a = state.orbs[i], b = state.orbs[j];
+            if (a.dead || b.dead) continue;
+            const d = dist(a.x, a.y, b.x, b.y);
+            if (d < 100) state.arcs.push({ a, b, str: 1 - d/100 });
+        }
+    }
+    
+    // Projectiles
+    for (let pi = 0; pi < state.projectiles.length; pi++) {
+        const p = state.projectiles[pi];
+        p.trail.push({ x: p.x, y: p.y, life: 1 });
+        p.x += Math.cos(p.ang) * p.speed;
+        p.y += Math.sin(p.ang) * p.speed;
+        // Trail cleanup (in-place)
+        for (let ti = p.trail.length - 1; ti >= 0; ti--) {
+            p.trail[ti].life -= dt * 5;
+            if (p.trail[ti].life <= 0) p.trail.splice(ti, 1);
+        }
+        if (p.trail.length > 8) p.trail.length = 8;
+        
+        const d = dist(p.x, p.y, CENTER, CENTER);
+        const pa = ang(p.x, p.y);
+        
+        // Ring collision
+        if (d > R.ring - R.ringW/2 && d < R.ring + R.ringW/2) {
+            const ra = normAng(pa - state.ring.angle);
+            for (const w of state.ring.walls) {
+                const ws = normAng(w.s), we = normAng(w.e);
+                if ((ws < we && ra >= ws && ra <= we) || (ws >= we && (ra >= ws || ra <= we))) {
+                    p.life = 0;
+                    for (let i = 0; i < 15; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        state.particles.push({ x: p.x, y: p.y, vx: Math.cos(a)*4, vy: Math.sin(a)*4, life: 0.3, col: COL.energy, size: 2 });
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Barrier collision (check both players' barriers)
+        if (p.life > 0) {
+            state.players.forEach((pl, idx) => {
+                pl.barriers.forEach(bar => {
+                    if (bar.hp <= 0) return;
+                    
+                    // Check if projectile is at barrier's radius and angle
+                    const barDist = Math.abs(d - bar.radius);
+                    const barAngDiff = Math.abs(angDiff(pa, bar.ang));
+                    
+                    if (barDist < 18 && barAngDiff < bar.size + 0.05) {
+                        // Hit barrier!
+                        const barrierDmg = p.heavy ? 2 : 1; // Lance does double damage
+                        bar.hp -= barrierDmg;
+                        bar.flash = 1;
+                        p.life = 0;
+                        
+                        const barCol = idx === 0 ? COL.p1 : COL.p2;
+                        
+                        if (bar.hp <= 0) {
+                            // Destroyed! Big effect
+                            playSound('barrier_break', { pan: getPan(p.x) });
+                            for (let i = 0; i < 35; i++) {
+                                const a = Math.random() * Math.PI * 2;
+                                const v = 2 + Math.random() * 6;
+                                state.particles.push({ 
+                                    x: p.x, y: p.y, 
+                                    vx: Math.cos(a)*v, vy: Math.sin(a)*v, 
+                                    life: 0.6, col: barCol.pri, size: 3 + Math.random()*4 
+                                });
+                            }
+                            // Shards flying outward
+                            for (let i = 0; i < 8; i++) {
+                                const shardAng = bar.ang + (Math.random() - 0.5) * bar.size * 2;
+                                const shardR = bar.radius + (Math.random() - 0.5) * 20;
+                                const sx = CENTER + Math.cos(shardAng) * shardR;
+                                const sy = CENTER + Math.sin(shardAng) * shardR;
+                                const outAng = shardAng + (Math.random() - 0.5) * 0.5;
+                                state.particles.push({
+                                    x: sx, y: sy,
+                                    vx: Math.cos(outAng) * (3 + Math.random() * 4),
+                                    vy: Math.sin(outAng) * (3 + Math.random() * 4),
+                                    life: 0.8, col: barCol.sec, size: 5 + Math.random() * 4
+                                });
+                            }
+                        } else {
+                            // Damaged but not destroyed
+                            playSound('barrier_hit', { pan: getPan(p.x) });
+                            for (let i = 0; i < 15; i++) {
+                                const a = Math.random() * Math.PI * 2;
+                                state.particles.push({ 
+                                    x: p.x, y: p.y, 
+                                    vx: Math.cos(a)*3, vy: Math.sin(a)*3, 
+                                    life: 0.4, col: barCol.sec, size: 2 + Math.random()*2 
+                                });
+                            }
+                        }
+                    }
+                });
+            });
+        }
+        
+        // Hit player
+        if (d > R.life - R.lifeW * 2 && p.life > 0) {
+            const tid = 1 - p.pid;
+            if (inZone(p.x, p.y, tid)) {
+                const target = state.players[tid];
+                const col = p.pid === 0 ? COL.p1 : COL.p2;
+                target.hp -= p.dmg;
+                target.flash = 1;
+                p.life = 0;
+                playSound('hit', { pan: getPan(p.x), volume: p.heavy ? 1.2 : 1 });
+                for (let i = 0; i < 40; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    const v = 3 + Math.random() * 7;
+                    state.particles.push({ x: p.x, y: p.y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, life: 0.5, col: col.pri, size: 3 + Math.random()*4 });
+                }
+            }
+        }
+        
+        if (d > R.outer + 20) p.life = 0;
+    }
+    // In-place projectile removal
+    for (let i = state.projectiles.length - 1; i >= 0; i--) {
+        if (state.projectiles[i].life <= 0) state.projectiles.splice(i, 1);
+    }
+
+    // Beams (in-place removal)
+    for (let i = state.beams.length - 1; i >= 0; i--) {
+        const b = state.beams[i];
+        b.life -= (b.type === 'drain') ? dt * 1.2 : dt * 3;
+        if (b.life <= 0) state.beams.splice(i, 1);
+    }
+
+    // Particles (in-place removal with hard cap)
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+        const p = state.particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.92; p.vy *= 0.92;
+        p.life -= dt;
+        if (p.life <= 0) state.particles.splice(i, 1);
+    }
+    if (state.particles.length > MAX_PARTICLES) {
+        state.particles.length = MAX_PARTICLES;
+    }
+
+    // Effects (in-place removal)
+    for (let i = state.effects.length - 1; i >= 0; i--) {
+        state.effects[i].life -= dt * 2.5;
+        if (state.effects[i].life <= 0) state.effects.splice(i, 1);
+    }
+    
+    // Players
+    state.players.forEach(p => {
+        if (p.flash > 0) p.flash -= dt * 4;
+        if (p.eFlash > 0) p.eFlash -= dt * 3;
+        p.hp = Math.max(0, p.hp);
+        // Barrier flash decay
+        p.barriers.forEach(b => {
+            if (b.flash > 0) b.flash -= dt * 4;
+        });
+    });
+    
+    // Ring
+    state.ring.angle += angDiff(state.ring.angle, state.ring.target) * 0.1;
+}
+
+function checkWin() {
+    for (let i = 0; i < 2; i++) {
+        if (state.players[i].hp <= 0) { endGame(1-i); return true; }
+    }
+    return false;
+}
+
+function updateEnergyHUD() {
+    state.players.forEach((p, i) => {
+        const el = document.getElementById(i === 0 ? 'energyTop' : 'energyBottom');
+        el.className = 'energyHud ' + (i === 0 ? 'top p1' : 'bottom p2');
+        let html = `<span class="label">${i === 0 ? 'EMBER' : 'FROST'}</span>`;
+        for (let e = 0; e < p.maxEnergy; e++) {
+            html += `<div class="pip ${e < p.energy ? 'full' : ''}"></div>`;
+        }
+        el.innerHTML = html;
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════════════════════════
+function draw() {
+    const c = ctx;
+    c.clearRect(0, 0, SIZE, SIZE);
+    
+    c.save();
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.clip();
+    
+    // Animated runes
+    if (!PERF_MODE) {
+        state.runes.forEach(r => {
+            const pulse = Math.sin(state.time * 0.5 + r.phase) * 0.5 + 0.5;
+            drawRune(c, r.seed, r.x, r.y, r.size, r.alpha * (0.5 + pulse * 0.5));
+        });
+    } else {
+        // Static runes in perf mode
+        state.runes.forEach(r => {
+            drawRune(c, r.seed, r.x, r.y, r.size, r.alpha * 0.7);
+        });
+    }
+    
+    // Central eye
+    const eye = c.createRadialGradient(CENTER, CENTER, 0, CENTER, CENTER, R.eye);
+    eye.addColorStop(0, 'rgba(140, 120, 180, 0.3)');
+    eye.addColorStop(0.6, 'rgba(100, 80, 140, 0.1)');
+    eye.addColorStop(1, 'transparent');
+    c.fillStyle = eye;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.eye, 0, Math.PI * 2);
+    c.fill();
+    
+    // Rotating inner sigil
+    c.save();
+    c.translate(CENTER, CENTER);
+    c.rotate(state.time * 0.2);
+    c.strokeStyle = 'rgba(140, 120, 180, 0.2)';
+    c.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3;
+        c.beginPath();
+        c.moveTo(Math.cos(a) * 8, Math.sin(a) * 8);
+        c.lineTo(Math.cos(a) * R.eye * 0.8, Math.sin(a) * R.eye * 0.8);
+        c.stroke();
+    }
+    c.restore();
+    
+    // Ring
+    c.save();
+    c.translate(CENTER, CENTER);
+    c.rotate(state.ring.angle);
+    c.strokeStyle = COL.ring;
+    c.lineWidth = R.ringW;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.arc(0, 0, R.ring, 0, Math.PI * 2);
+    c.stroke();
+    c.shadowBlur = 12;
+    c.shadowColor = COL.glow;
+    c.strokeStyle = COL.energy;
+    c.lineWidth = 3;
+    state.ring.walls.forEach(w => {
+        c.beginPath();
+        c.arc(0, 0, R.ring, w.s, w.e);
+        c.stroke();
+    });
+    c.shadowBlur = 0;
+    c.restore();
+    
+    // Player barriers
+    state.players.forEach((p, pid) => {
+        const col = pid === 0 ? COL.p1 : COL.p2;
+        
+        p.barriers.forEach(bar => {
+            if (bar.hp <= 0) return;
+            
+            const damaged = bar.hp < bar.maxHp;
+            const flash = bar.flash > 0 ? bar.flash : 0;
+            const pulse = Math.sin(state.time * 2 + bar.seed * 10) * 0.1;
+            
+            // Main barrier arc
+            c.save();
+            c.translate(CENTER, CENTER);
+            
+            // Outer glow
+            c.globalAlpha = (0.25 + pulse + flash * 0.4);
+            c.strokeStyle = col.glow;
+            c.lineWidth = 18;
+            c.lineCap = 'round';
+            c.beginPath();
+            c.arc(0, 0, bar.radius, bar.ang - bar.size, bar.ang + bar.size);
+            c.stroke();
+            
+            // Main body
+            c.globalAlpha = 0.7 + flash * 0.3;
+            const barGrad = c.createLinearGradient(
+                Math.cos(bar.ang) * (bar.radius - 10), Math.sin(bar.ang) * (bar.radius - 10),
+                Math.cos(bar.ang) * (bar.radius + 10), Math.sin(bar.ang) * (bar.radius + 10)
+            );
+            barGrad.addColorStop(0, col.dim);
+            barGrad.addColorStop(0.5, damaged ? 'rgba(60,60,70,0.8)' : col.pri);
+            barGrad.addColorStop(1, col.dim);
+            c.strokeStyle = barGrad;
+            c.lineWidth = 10;
+            c.beginPath();
+            c.arc(0, 0, bar.radius, bar.ang - bar.size, bar.ang + bar.size);
+            c.stroke();
+            
+            // Inner bright edge
+            c.globalAlpha = 0.9;
+            c.strokeStyle = damaged ? 'rgba(180,180,190,0.6)' : col.sec;
+            c.lineWidth = 2;
+            c.beginPath();
+            c.arc(0, 0, bar.radius, bar.ang - bar.size, bar.ang + bar.size);
+            c.stroke();
+            
+            // Crack lines if damaged
+            if (damaged) {
+                c.globalAlpha = 0.6;
+                c.strokeStyle = '#222';
+                c.lineWidth = 1.5;
+                
+                // Generate deterministic cracks based on seed
+                const numCracks = 3;
+                for (let i = 0; i < numCracks; i++) {
+                    const crackAng = bar.ang + (bar.seed * 10 + i * 0.8 - 1.2) * bar.size * 0.5;
+                    const crackStart = bar.radius - 4;
+                    const crackEnd = bar.radius + 4;
+                    
+                    c.beginPath();
+                    c.moveTo(Math.cos(crackAng) * crackStart, Math.sin(crackAng) * crackStart);
+                    
+                    // Jagged crack
+                    const midR = (crackStart + crackEnd) / 2;
+                    const jitter = (bar.seed * (i + 1) % 1 - 0.5) * 0.08;
+                    c.lineTo(Math.cos(crackAng + jitter) * midR, Math.sin(crackAng + jitter) * midR);
+                    c.lineTo(Math.cos(crackAng - jitter * 0.5) * crackEnd, Math.sin(crackAng - jitter * 0.5) * crackEnd);
+                    c.stroke();
+                }
+            }
+            
+            // End caps (small circles at arc ends)
+            c.globalAlpha = 0.8;
+            c.fillStyle = col.pri;
+            const endAngles = [bar.ang - bar.size, bar.ang + bar.size];
+            endAngles.forEach(ea => {
+                c.beginPath();
+                c.arc(Math.cos(ea) * bar.radius, Math.sin(ea) * bar.radius, 4, 0, Math.PI * 2);
+                c.fill();
+            });
+            
+            // Rune/sigil decoration on barrier
+            c.globalAlpha = 0.4;
+            c.strokeStyle = col.sec;
+            c.lineWidth = 1;
+            const runeAng = bar.ang;
+            const runeR = bar.radius;
+            const runeX = Math.cos(runeAng) * runeR;
+            const runeY = Math.sin(runeAng) * runeR;
+            
+            // Simple protective symbol
+            c.beginPath();
+            c.arc(runeX, runeY, 6, 0, Math.PI * 2);
+            c.stroke();
+            c.beginPath();
+            c.moveTo(runeX, runeY - 8);
+            c.lineTo(runeX, runeY + 8);
+            c.moveTo(runeX - 8, runeY);
+            c.lineTo(runeX + 8, runeY);
+            c.stroke();
+            
+            c.globalAlpha = 1;
+            c.restore();
+        });
+    });
+    
+    // Arc lightning between orbs - PROMINENT with varying colors
+    state.arcs.forEach(arc => {
+        const segs = PERF_MODE ? 5 : 10;
+        const colA = arc.a.color;
+        const colB = arc.b.color;
+        
+        // Draw multiple lightning strands (fewer in perf mode)
+        const numStrands = PERF_MODE ? 1 : 3;
+        for (let strand = 0; strand < numStrands; strand++) {
+            // Gradient from one orb color to the other
+            const grad = c.createLinearGradient(arc.a.x, arc.a.y, arc.b.x, arc.b.y);
+            grad.addColorStop(0, colA.mid);
+            grad.addColorStop(0.5, '#fff');
+            grad.addColorStop(1, colB.mid);
+            
+            c.strokeStyle = grad;
+            c.lineWidth = (2.5 - strand * 0.5) * arc.str;
+            c.lineCap = 'round';
+            c.globalAlpha = (0.5 + strand * 0.1) * arc.str;
+            c.beginPath();
+            
+            for (let i = 0; i <= segs; i++) {
+                const t = i / segs;
+                const bx = lerp(arc.a.x, arc.b.x, t);
+                const by = lerp(arc.a.y, arc.b.y, t);
+                
+                // Oscillating wave with noise
+                const freq = 2 + strand;
+                const amp = (8 + strand * 4) * arc.str;
+                const wave = Math.sin(t * Math.PI * freq + state.time * (15 + strand * 5) + strand) * amp;
+                const noise = PERF_MODE ? 0 : (Math.random() - 0.5) * 6 * arc.str;
+                
+                const px = -(arc.b.y - arc.a.y), py = arc.b.x - arc.a.x;
+                const pl = Math.sqrt(px*px + py*py) || 1;
+                const x = bx + (px/pl) * (wave + noise);
+                const y = by + (py/pl) * (wave + noise);
+                
+                if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+            }
+            c.stroke();
+        }
+        
+        // Glow effect - blend both colors (skip in perf mode)
+        if (!PERF_MODE) {
+            c.shadowBlur = 10;
+            c.shadowColor = colA.glow;
+            c.strokeStyle = `rgba(255, 255, 255, ${0.4 * arc.str})`;
+            c.lineWidth = 1.5;
+            c.globalAlpha = arc.str;
+            c.beginPath();
+            for (let i = 0; i <= segs; i++) {
+                const t = i / segs;
+                const x = lerp(arc.a.x, arc.b.x, t);
+                const y = lerp(arc.a.y, arc.b.y, t);
+                if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+            }
+            c.stroke();
+            c.shadowBlur = 0;
+        }
+        c.globalAlpha = 1;
+    });
+    
+    // Energy Orbs - with lightning halos and varying colors
+    state.orbs.forEach(o => {
+        if (o.dead) return;
+        const pulse = PERF_MODE ? 0 : Math.sin(state.time * 4 + o.phase);
+        const sz = 10 + pulse * 2;
+        const col = o.color;
+        c.globalAlpha = o.life;
+        
+        // Outer lightning halo - in orb's color (simplified in perf mode)
+        if (!PERF_MODE) {
+            const numBolts = 8;
+            for (let b = 0; b < numBolts; b++) {
+                const baseAng = (b / numBolts) * Math.PI * 2 + state.time * 2 + o.phase;
+                const boltLen = sz * 1.8 + Math.sin(state.time * 8 + b + o.phase) * sz * 0.6;
+                
+                c.strokeStyle = col.mid;
+                c.globalAlpha = o.life * (0.3 + Math.random() * 0.3);
+                c.lineWidth = 1.5;
+                c.beginPath();
+                
+                let bx = o.x, by = o.y;
+                c.moveTo(bx + Math.cos(baseAng) * sz * 0.8, by + Math.sin(baseAng) * sz * 0.8);
+                
+                const steps = 4;
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    const jitter = (Math.random() - 0.5) * 8;
+                    const jitterAng = baseAng + jitter * 0.1;
+                    const r = sz * 0.8 + boltLen * t;
+                    bx = o.x + Math.cos(jitterAng) * r + (Math.random() - 0.5) * 4;
+                    by = o.y + Math.sin(jitterAng) * r + (Math.random() - 0.5) * 4;
+                    c.lineTo(bx, by);
+                }
+                c.stroke();
+            }
+        }
+        c.globalAlpha = o.life;
+        
+        // Glow layers - using orb colors (simplified in perf mode)
+        if (!PERF_MODE) {
+            const glow3 = c.createRadialGradient(o.x, o.y, sz * 0.5, o.x, o.y, sz * 3.5);
+            glow3.addColorStop(0, col.mid);
+            glow3.addColorStop(0.4, col.outer);
+            glow3.addColorStop(1, 'transparent');
+            c.globalAlpha = o.life * 0.3;
+            c.fillStyle = glow3;
+            c.beginPath();
+            c.arc(o.x, o.y, sz * 3.5, 0, Math.PI * 2);
+            c.fill();
+            c.globalAlpha = o.life;
+        }
+        
+        const glow2 = c.createRadialGradient(o.x, o.y, 0, o.x, o.y, sz * (PERF_MODE ? 1.5 : 2));
+        glow2.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+        glow2.addColorStop(0.3, col.mid);
+        glow2.addColorStop(0.7, col.outer);
+        glow2.addColorStop(1, 'transparent');
+        c.fillStyle = glow2;
+        c.beginPath();
+        c.arc(o.x, o.y, sz * (PERF_MODE ? 1.5 : 2), 0, Math.PI * 2);
+        c.fill();
+        
+        // Core with inner detail - using orb colors
+        if (!PERF_MODE) {
+            c.shadowBlur = 15;
+            c.shadowColor = col.glow;
+        }
+        
+        const core = c.createRadialGradient(o.x - sz*0.2, o.y - sz*0.2, 0, o.x, o.y, sz);
+        core.addColorStop(0, '#fff');
+        core.addColorStop(0.3, col.core);
+        core.addColorStop(0.6, col.mid);
+        core.addColorStop(1, col.outer);
+        c.fillStyle = core;
+        c.beginPath();
+        c.arc(o.x, o.y, sz, 0, Math.PI * 2);
+        c.fill();
+        
+        // Inner sparkle ring (skip in perf mode)
+        if (!PERF_MODE) {
+            c.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            c.lineWidth = 1;
+            c.beginPath();
+            c.arc(o.x, o.y, sz * 0.5, 0, Math.PI * 2);
+            c.stroke();
+        }
+        
+        // Highlight
+        c.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        c.beginPath();
+        c.arc(o.x - sz * 0.3, o.y - sz * 0.3, sz * 0.25, 0, Math.PI * 2);
+        c.fill();
+        
+        c.shadowBlur = 0;
+        c.globalAlpha = 1;
+    });
+    
+    // Spell buttons
+    state.players.forEach((p, pid) => {
+        const col = pid === 0 ? COL.p1 : COL.p2;
+        getSpellBtns(pid).forEach(btn => {
+            const afford = p.energy >= btn.spell.cost;
+            // Check if any pointer is targeting this spell button (multi-touch)
+            let active = false;
+            for (const ptr of state.pointers.values()) {
+                if (ptr.type === 'spell' && ptr.spell.id === btn.spell.id && ptr.pid === pid) {
+                    active = true;
+                    break;
+                }
+            }
+            
+            // Background glow
+            c.globalAlpha = active ? 0.8 : (afford ? 0.5 : 0.15);
+            const bg = c.createRadialGradient(btn.x, btn.y, 0, btn.x, btn.y, btn.r);
+            bg.addColorStop(0, afford ? col.dim : 'rgba(30,30,40,0.3)');
+            bg.addColorStop(1, 'transparent');
+            c.fillStyle = bg;
+            c.beginPath();
+            c.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+            c.fill();
+            
+            // Ring
+            c.strokeStyle = afford ? col.pri : 'rgba(80,80,100,0.3)';
+            c.lineWidth = active ? 2.5 : 1.5;
+            c.beginPath();
+            c.arc(btn.x, btn.y, btn.r - 3, 0, Math.PI * 2);
+            c.stroke();
+            
+            // Sigil
+            c.globalAlpha = afford ? (active ? 1 : 0.7) : 0.2;
+            drawSigil(c, btn.spell.id, btn.x, btn.y, btn.r * 1.4, afford ? col.pri : '#555');
+            
+            c.globalAlpha = 1;
+        });
+    });
+    
+    // Aim lines - draw for all active spell pointers (multi-touch)
+    for (const ptr of state.pointers.values()) {
+        if (ptr.type !== 'spell') continue;
+        const col = ptr.pid === 0 ? COL.p1 : COL.p2;
+        const dx = ptr.x - ptr.sx, dy = ptr.y - ptr.sy;
+        const len = Math.sqrt(dx*dx + dy*dy);
+
+        if (len > 15) {
+            const aimAng = Math.atan2(dy, dx);
+
+            // Special preview for WARD spell - show barrier arc
+            if (ptr.spell.id === 'ward') {
+                const p = state.players[ptr.pid];
+
+                // Calculate where barrier would appear
+                let previewAng = aimAng;
+                const maxDev = Math.PI * 0.45;
+                const dev = angDiff(p.angle, previewAng);
+                if (Math.abs(dev) > maxDev) {
+                    previewAng = p.angle + Math.sign(dev) * maxDev;
+                }
+
+                const endDist = dist(ptr.x, ptr.y, CENTER, CENTER);
+                const minR = R.cast + 15;
+                const maxR = R.life - 20;
+                let previewR = Math.max(minR, Math.min(maxR, endDist));
+
+                // Draw preview arc
+                c.save();
+                c.translate(CENTER, CENTER);
+                c.strokeStyle = col.sec;
+                c.lineWidth = 8;
+                c.lineCap = 'round';
+                c.globalAlpha = 0.4 + Math.sin(state.time * 6) * 0.1;
+                c.setLineDash([6, 6]);
+                c.beginPath();
+                c.arc(0, 0, previewR, previewAng - 0.15, previewAng + 0.15);
+                c.stroke();
+                c.setLineDash([]);
+                c.restore();
+
+                // Dashed line to preview location
+                c.strokeStyle = col.pri;
+                c.lineWidth = 1.5;
+                c.globalAlpha = 0.5;
+                c.setLineDash([4, 4]);
+                c.beginPath();
+                c.moveTo(ptr.sx, ptr.sy);
+                const previewX = CENTER + Math.cos(previewAng) * previewR;
+                const previewY = CENTER + Math.sin(previewAng) * previewR;
+                c.lineTo(previewX, previewY);
+                c.stroke();
+                c.setLineDash([]);
+                c.globalAlpha = 1;
+            } else {
+                // Standard aim line for other spells
+                c.strokeStyle = col.pri;
+                c.lineWidth = 2;
+                c.globalAlpha = 0.7;
+                c.setLineDash([8, 4]);
+                c.beginPath();
+                c.moveTo(ptr.sx, ptr.sy);
+                c.lineTo(ptr.x, ptr.y);
+                c.stroke();
+                c.setLineDash([]);
+
+                // Arrow
+                c.fillStyle = col.pri;
+                c.beginPath();
+                c.moveTo(ptr.x, ptr.y);
+                c.lineTo(ptr.x - Math.cos(aimAng - 0.35) * 12, ptr.y - Math.sin(aimAng - 0.35) * 12);
+                c.lineTo(ptr.x - Math.cos(aimAng + 0.35) * 12, ptr.y - Math.sin(aimAng + 0.35) * 12);
+                c.closePath();
+                c.fill();
+                c.globalAlpha = 1;
+            }
+        }
+    }
+    
+    // Players
+    state.players.forEach((p, i) => {
+        const hp = p.hp / 100;
+        const col = i === 0 ? COL.p1 : COL.p2;
+        const half = Math.PI / 2;
+        
+        // Hit flash
+        if (p.flash > 0) {
+            c.globalAlpha = p.flash * 0.35;
+            c.fillStyle = col.pri;
+            c.beginPath();
+            c.arc(CENTER, CENTER, R.life + 15, p.angle - half, p.angle + half);
+            c.arc(CENTER, CENTER, R.cast - 10, p.angle + half, p.angle - half, true);
+            c.fill();
+            c.globalAlpha = 1;
+        }
+        
+        // Life arc background
+        c.strokeStyle = col.dim;
+        c.lineWidth = R.lifeW;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.arc(CENTER, CENTER, R.life, p.angle - half, p.angle + half);
+        c.stroke();
+        
+        // Life arc
+        const hArc = half * hp;
+        c.strokeStyle = col.pri;
+        c.beginPath();
+        c.arc(CENTER, CENTER, R.life, p.angle - hArc, p.angle + hArc);
+        c.stroke();
+        
+        if (hp > 0.15) {
+            c.shadowBlur = 8;
+            c.shadowColor = col.glow;
+            c.strokeStyle = col.sec;
+            c.lineWidth = 2;
+            c.beginPath();
+            c.arc(CENTER, CENTER, R.life, p.angle - hArc, p.angle + hArc);
+            c.stroke();
+            c.shadowBlur = 0;
+        }
+        
+        // Energy pips on life ring (smaller, HUD shows main display)
+        const eFlash = p.eFlash > 0 ? p.eFlash : 0;
+        for (let e = 0; e < p.maxEnergy; e++) {
+            const ea = p.angle - Math.PI * 0.28 + (e / (p.maxEnergy - 1)) * Math.PI * 0.56;
+            const bob = Math.sin(state.time * 2.5 + e * 0.6) * 1.5;
+            const ex = CENTER + Math.cos(ea) * (R.life + 18 + bob);
+            const ey = CENTER + Math.sin(ea) * (R.life + 18 + bob);
+            const has = e < p.energy;
+            const isNew = e === p.energy - 1 && eFlash > 0;
+            
+            if (has) {
+                // Small lightning sparks around pip
+                if (Math.random() > 0.7) {
+                    const sparkAng = Math.random() * Math.PI * 2;
+                    const sparkLen = 4 + Math.random() * 6;
+                    c.strokeStyle = `rgba(212, 208, 196, ${0.3 + Math.random() * 0.3})`;
+                    c.lineWidth = 1;
+                    c.beginPath();
+                    c.moveTo(ex + Math.cos(sparkAng) * 3, ey + Math.sin(sparkAng) * 3);
+                    c.lineTo(ex + Math.cos(sparkAng) * sparkLen, ey + Math.sin(sparkAng) * sparkLen);
+                    c.stroke();
+                }
+                
+                const gs = 8 + (isNew ? eFlash * 8 : 0);
+                const gg = c.createRadialGradient(ex, ey, 0, ex, ey, gs);
+                gg.addColorStop(0, 'rgba(212, 208, 196, 0.5)');
+                gg.addColorStop(0.5, col.glow);
+                gg.addColorStop(1, 'transparent');
+                c.fillStyle = gg;
+                c.beginPath();
+                c.arc(ex, ey, gs, 0, Math.PI * 2);
+                c.fill();
+                
+                const cs = 3.5 + Math.sin(state.time * 3 + e) * 0.5 + (isNew ? eFlash * 2 : 0);
+                const cg = c.createRadialGradient(ex - 0.5, ey - 0.5, 0, ex, ey, cs);
+                cg.addColorStop(0, '#fff');
+                cg.addColorStop(0.5, COL.energy);
+                cg.addColorStop(1, col.pri);
+                c.fillStyle = cg;
+                c.beginPath();
+                c.arc(ex, ey, cs, 0, Math.PI * 2);
+                c.fill();
+            } else {
+                c.strokeStyle = 'rgba(212, 208, 196, 0.08)';
+                c.lineWidth = 1;
+                c.beginPath();
+                c.arc(ex, ey, 3, 0, Math.PI * 2);
+                c.stroke();
+            }
+        }
+    });
+    
+    // Projectiles
+    state.projectiles.forEach(p => {
+        const col = p.pid === 0 ? COL.p1 : COL.p2;
+        
+        // Trail
+        if (p.trail.length > 1) {
+            c.strokeStyle = col.pri;
+            c.lineWidth = p.heavy ? 4 : 2;
+            c.lineCap = 'round';
+            c.beginPath();
+            p.trail.forEach((t, i) => {
+                c.globalAlpha = t.life * 0.4;
+                if (i === 0) c.moveTo(t.x, t.y); else c.lineTo(t.x, t.y);
+            });
+            c.stroke();
+        }
+        c.globalAlpha = 1;
+        
+        // Head
+        c.save();
+        c.translate(p.x, p.y);
+        c.rotate(p.ang);
+        c.shadowBlur = 12;
+        c.shadowColor = col.glow;
+        c.fillStyle = col.pri;
+        
+        if (p.heavy) {
+            // Lance - bigger, more angular
+            c.beginPath();
+            c.moveTo(22, 0);
+            c.lineTo(-8, 12);
+            c.lineTo(0, 0);
+            c.lineTo(-8, -12);
+            c.closePath();
+            c.fill();
+        } else {
+            // Bolt - sleek
+            c.beginPath();
+            c.moveTo(16, 0);
+            c.lineTo(-8, 6);
+            c.lineTo(-4, 0);
+            c.lineTo(-8, -6);
+            c.closePath();
+            c.fill();
+        }
+        
+        c.fillStyle = '#fff';
+        c.beginPath();
+        c.arc(4, 0, p.heavy ? 4 : 2.5, 0, Math.PI * 2);
+        c.fill();
+        c.shadowBlur = 0;
+        c.restore();
+    });
+    
+    // Beams
+    state.beams.forEach(b => {
+        const col = b.pid === 0 ? COL.p1 : COL.p2;
+        
+        if (b.type === 'drain') {
+            // Drain beam - flows from victim to stealer with color transition
+            const fromCol = b.fromCol === 0 ? COL.p1 : COL.p2;
+            const toCol = b.toCol === 0 ? COL.p1 : COL.p2;
+            
+            // Animated flow effect - energy packets moving along beam
+            const numPackets = 8;
+            const progress = 1 - b.life; // 0 to 1 as beam fades
+            
+            // Draw the main beam with gradient
+            const grad = c.createLinearGradient(b.sx, b.sy, b.ex, b.ey);
+            grad.addColorStop(0, fromCol.pri);
+            grad.addColorStop(0.5, COL.energy);
+            grad.addColorStop(1, toCol.pri);
+            
+            c.globalAlpha = b.life * 0.7;
+            c.strokeStyle = grad;
+            c.lineWidth = 3 + b.life * 4;
+            c.lineCap = 'round';
+            c.beginPath();
+            c.moveTo(b.sx, b.sy);
+            c.lineTo(b.ex, b.ey);
+            c.stroke();
+            
+            // Glow
+            c.shadowBlur = 12;
+            c.shadowColor = COL.glow;
+            c.strokeStyle = 'rgba(255,255,255,0.4)';
+            c.lineWidth = 2;
+            c.beginPath();
+            c.moveTo(b.sx, b.sy);
+            c.lineTo(b.ex, b.ey);
+            c.stroke();
+            c.shadowBlur = 0;
+            
+            // Energy packets flowing along beam
+            for (let i = 0; i < numPackets; i++) {
+                const t = ((i / numPackets) + state.time * 3 + progress) % 1;
+                const px = lerp(b.sx, b.ex, t);
+                const py = lerp(b.sy, b.ey, t);
+                
+                // Color transitions along path
+                const pGrad = c.createRadialGradient(px, py, 0, px, py, 8);
+                if (t < 0.3) {
+                    pGrad.addColorStop(0, '#fff');
+                    pGrad.addColorStop(0.5, fromCol.sec);
+                    pGrad.addColorStop(1, 'transparent');
+                } else if (t > 0.7) {
+                    pGrad.addColorStop(0, '#fff');
+                    pGrad.addColorStop(0.5, toCol.sec);
+                    pGrad.addColorStop(1, 'transparent');
+                } else {
+                    pGrad.addColorStop(0, '#fff');
+                    pGrad.addColorStop(0.5, COL.energy);
+                    pGrad.addColorStop(1, 'transparent');
+                }
+                
+                c.globalAlpha = b.life * (0.5 + Math.sin(t * Math.PI) * 0.5);
+                c.fillStyle = pGrad;
+                c.beginPath();
+                c.arc(px, py, 6 + Math.sin(state.time * 10 + i) * 2, 0, Math.PI * 2);
+                c.fill();
+            }
+            
+            // Lightning crackle along beam
+            c.globalAlpha = b.life * 0.6;
+            c.strokeStyle = COL.energy;
+            c.lineWidth = 1;
+            const segs = 12;
+            for (let strand = 0; strand < 2; strand++) {
+                c.beginPath();
+                for (let i = 0; i <= segs; i++) {
+                    const t = i / segs;
+                    const bx = lerp(b.sx, b.ex, t);
+                    const by = lerp(b.sy, b.ey, t);
+                    const perpX = -(b.ey - b.sy), perpY = b.ex - b.sx;
+                    const perpLen = Math.sqrt(perpX*perpX + perpY*perpY) || 1;
+                    const wave = Math.sin(t * Math.PI * 4 + state.time * 20 + strand * Math.PI) * 10;
+                    const noise = (Math.random() - 0.5) * 6;
+                    const x = bx + (perpX/perpLen) * (wave + noise);
+                    const y = by + (perpY/perpLen) * (wave + noise);
+                    if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+                }
+                c.stroke();
+            }
+            
+        } else {
+            // Attack beam (original style)
+            c.globalAlpha = b.life;
+            c.strokeStyle = col.sec;
+            c.lineWidth = 4 + b.life * 6;
+            c.lineCap = 'round';
+            c.shadowBlur = 15;
+            c.shadowColor = col.glow;
+            c.beginPath();
+            c.moveTo(b.sx, b.sy);
+            c.lineTo(b.sx + Math.cos(b.ang) * b.length, b.sy + Math.sin(b.ang) * b.length);
+            c.stroke();
+            c.shadowBlur = 0;
+        }
+        c.globalAlpha = 1;
+    });
+    
+    // Effects
+    state.effects.forEach(e => {
+        c.globalAlpha = e.life;
+        c.strokeStyle = e.col;
+        c.lineWidth = 2;
+        
+        if (e.type === 'absorb') {
+            // Inward contracting rings
+            const sz = e.life * 40 + 5;
+            c.beginPath();
+            c.arc(e.x, e.y, sz, 0, Math.PI * 2);
+            c.stroke();
+            c.beginPath();
+            c.arc(e.x, e.y, sz * 0.6, 0, Math.PI * 2);
+            c.stroke();
+        } else if (e.type === 'ward') {
+            // Ward creation - protective sigil forming
+            const sz = 25 + (1 - e.life) * 15;
+            const rot = state.time * 2;
+            
+            c.save();
+            c.translate(e.x, e.y);
+            c.rotate(rot);
+            
+            // Outer hexagon
+            c.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const a = i * Math.PI / 3;
+                if (i === 0) c.moveTo(Math.cos(a) * sz, Math.sin(a) * sz);
+                else c.lineTo(Math.cos(a) * sz, Math.sin(a) * sz);
+            }
+            c.closePath();
+            c.stroke();
+            
+            // Inner cross
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(0, -sz * 0.6);
+            c.lineTo(0, sz * 0.6);
+            c.moveTo(-sz * 0.6, 0);
+            c.lineTo(sz * 0.6, 0);
+            c.stroke();
+            
+            // Center dot
+            c.fillStyle = e.col;
+            c.beginPath();
+            c.arc(0, 0, 4, 0, Math.PI * 2);
+            c.fill();
+            
+            c.restore();
+        } else {
+            // Expanding ring (cast effect)
+            const sz = (1 - e.life) * 50 + 10;
+            c.beginPath();
+            c.arc(e.x, e.y, sz, 0, Math.PI * 2);
+            c.stroke();
+        }
+    });
+    c.globalAlpha = 1;
+    
+    // Particles
+    state.particles.forEach(p => {
+        c.globalAlpha = p.life;
+        c.fillStyle = p.col;
+        c.beginPath();
+        c.arc(p.x, p.y, p.size * Math.min(1, p.life * 2), 0, Math.PI * 2);
+        c.fill();
+    });
+    c.globalAlpha = 1;
+    
+    c.restore();
+}
+
+function drawFX() {
+    const c = fxCtx;
+    c.clearRect(0, 0, SIZE, SIZE);
+    const v = c.createRadialGradient(CENTER, CENTER, R.inner, CENTER, CENTER, R.outer);
+    v.addColorStop(0, 'transparent');
+    v.addColorStop(0.8, 'transparent');
+    v.addColorStop(1, 'rgba(0,0,0,0.5)');
+    c.fillStyle = v;
+    c.fillRect(0, 0, SIZE, SIZE);
+    c.globalCompositeOperation = 'destination-in';
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════════════════════════
+let last = 0, orbT = 0, lastFrame = 0;
+
+function loop(ts) {
+    // Frame throttling for performance mode
+    if (PERF_MODE && ts - lastFrame < FRAME_TIME) {
+        requestAnimationFrame(loop);
+        return;
+    }
+    lastFrame = ts;
+    
+    const dt = Math.min((ts - last) / 1000, 0.1);
+    last = ts;
+    
+    if (state.running) {
+        orbT += dt;
+        if (orbT > 0.9 && state.orbs.length < 6) { orbT = 0; spawnOrb(); }
+        update(dt);
+        checkWin();
+        updateEnergyHUD();
+    }
+    
+    draw();
+    if (!PERF_MODE) drawFX(); // Skip FX layer in perf mode
+    requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TUTORIAL
+// ═══════════════════════════════════════════════════════════════════
+const TUTORIAL = [
+    { title: 'THE CIRCLE', text: 'Two mages duel across a ritual circle.<br><br>Control your half. Break the opponent\'s life ring to win.' },
+    { title: 'BARRIERS', text: 'Each side starts with protective barriers.<br><br>Barriers block attacks. Hit them <strong>twice</strong> to destroy.<br>Aim around them—or through them.' },
+    { title: 'ENERGY', text: 'Orbs drift from the center outward.<br><br><strong>TAP orbs</strong> to collect energy.<br>Connected orbs chain together.' },
+    { title: 'SPELLS', text: 'Four sigils arc through your zone.<br><br><strong>DRAG from a sigil</strong> to aim and cast.<br>Release to fire in that direction.', showSpells: true },
+    { title: 'WARD SPELL', text: 'The WARD sigil creates a <strong>new barrier</strong> for yourself.<br><br>Aim where you want protection.<br>Reinforce your defenses!' },
+    { title: 'THE RING', text: 'The central barrier blocks projectiles.<br><br><strong>DRAG the ring</strong> to rotate it.<br>Shield yourself or clear a shot.' },
+    { title: 'BEGIN', text: 'Collect. Cast. Control.<br><br>Good luck, mage.' }
+];
+
+let tutStep = 0;
+
+function showTutorial() {
+    tutStep = 0;
+    document.getElementById('startScreen').classList.add('hidden');
+    document.getElementById('tutorialOverlay').classList.remove('hidden');
+    renderTut();
+}
+
+function renderTut() {
+    const s = TUTORIAL[tutStep];
+    let html = `<div class="tutStep">STEP ${tutStep + 1} / ${TUTORIAL.length}</div>`;
+    html += `<div class="tutTitle">${s.title}</div>`;
+    html += `<div class="tutText">${s.text}</div>`;
+    
+    if (s.showSpells) {
+        html += '<div class="spellList">';
+        SPELLS.forEach(sp => {
+            html += `<div class="spellInfo"><canvas id="tut_${sp.id}" width="50" height="50"></canvas><div class="spellName">${sp.name}</div><div class="spellCost">${sp.cost} energy</div><div class="spellDesc">${sp.desc}</div></div>`;
+        });
+        html += '</div>';
+    }
+    
+    document.getElementById('tutorialContent').innerHTML = html;
+    
+    if (s.showSpells) {
+        SPELLS.forEach(sp => {
+            const c = document.getElementById('tut_' + sp.id);
+            if (c) drawSigil(c.getContext('2d'), sp.id, 25, 25, 40, COL.energy);
+        });
+    }
+}
+
+function nextTut() {
+    tutStep++;
+    if (tutStep >= TUTORIAL.length) {
+        document.getElementById('tutorialOverlay').classList.add('hidden');
+        startGame();
+    } else renderTut();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME CONTROL
+// ═══════════════════════════════════════════════════════════════════
+function startGame() {
+    state.running = true;
+    state.time = 0;
+    state.orbs = [];
+    state.projectiles = [];
+    state.beams = [];
+    state.particles = [];
+    state.effects = [];
+    state.pointers.clear();
+    state.ring.angle = 0;
+    state.ring.target = 0;
+    
+    state.players.forEach((p, i) => {
+        p.hp = 100;
+        p.energy = 2;
+        p.barriers = generateBarriers(i);
+        p.flash = 0;
+        p.eFlash = 0;
+    });
+    
+    orbT = 0;
+    document.getElementById('startScreen').classList.add('hidden');
+    document.getElementById('victoryScreen').classList.add('hidden');
+    document.getElementById('energyTop').style.display = 'flex';
+    document.getElementById('energyBottom').style.display = 'flex';
+    updateEnergyHUD();
+    
+    setTimeout(() => { spawnOrb(); setTimeout(spawnOrb, 250); setTimeout(spawnOrb, 500); }, 150);
+}
+
+function endGame(winner) {
+    state.running = false;
+    const col = winner === 0 ? COL.p1 : COL.p2;
+    document.getElementById('victorTitle').style.color = col.pri;
+    document.getElementById('victorTitle').textContent = col.name + ' PREVAILS';
+    document.getElementById('victoryScreen').classList.remove('hidden');
+    document.getElementById('energyTop').style.display = 'none';
+    document.getElementById('energyBottom').style.display = 'none';
+    playSound('victory');
+}
+
+function showMenu() {
+    state.running = false;
+    document.getElementById('victoryScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+    document.getElementById('energyTop').style.display = 'none';
+    document.getElementById('energyBottom').style.display = 'none';
+}
+
+document.getElementById('tutorialBtn').onclick = e => { e.preventDefault(); resumeAudio(); showTutorial(); };
+document.getElementById('quickPlayBtn').onclick = e => { e.preventDefault(); resumeAudio(); startGame(); };
+document.getElementById('restartBtn').onclick = e => { e.preventDefault(); resumeAudio(); startGame(); };
+document.getElementById('menuBtn').onclick = e => { e.preventDefault(); resumeAudio(); showMenu(); };
+document.getElementById('tutorialOverlay').onclick = e => { e.preventDefault(); resumeAudio(); nextTut(); };
+
+let muted = false;
+document.getElementById('muteBtn').onclick = e => {
+    e.preventDefault();
+    resumeAudio();
+    muted = !muted;
+    if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+    document.getElementById('muteBtn').textContent = muted ? '🔇 Muted' : '🔊 Sound';
+};
+
+genBackground();
+drawFX();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

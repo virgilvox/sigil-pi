@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+  <title>Robot Friend</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    body {
+      width: 720px;
+      height: 720px;
+      background: #0a0a0f;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .display-mask {
+      width: 680px;
+      height: 680px;
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+      background: radial-gradient(circle at 30% 30%, #1a1a2e 0%, #0a0a12 100%);
+      box-shadow: 
+        inset 0 0 60px rgba(0, 255, 200, 0.05),
+        inset 0 0 120px rgba(0, 100, 255, 0.03);
+      cursor: pointer;
+    }
+
+    .face-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.3s ease;
+    }
+
+    .face-container.nudge-left { transform: translateX(-8px) rotate(-2deg); }
+    .face-container.nudge-right { transform: translateX(8px) rotate(2deg); }
+    .face-container.nudge-up { transform: translateY(-8px); }
+    .face-container.nudge-down { transform: translateY(8px); }
+    .face-container.wiggle { animation: wiggle 0.5s ease; }
+    .face-container.bounce { animation: petBounce 0.4s ease; }
+    .face-container.nuzzle { animation: nuzzle 0.6s ease; }
+
+    @keyframes wiggle {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(-5deg); }
+      75% { transform: rotate(5deg); }
+    }
+
+    @keyframes petBounce {
+      0%, 100% { transform: scale(1) translateY(0); }
+      50% { transform: scale(1.05) translateY(-10px); }
+    }
+
+    @keyframes nuzzle {
+      0%, 100% { transform: rotate(0deg) translateX(0); }
+      25% { transform: rotate(-8deg) translateX(-15px); }
+      75% { transform: rotate(8deg) translateX(15px); }
+    }
+
+    .scanlines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.1) 2px,
+        rgba(0, 0, 0, 0.1) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+      opacity: 0.3;
+    }
+
+    .eyes {
+      display: flex;
+      gap: 80px;
+      margin-top: -40px;
+      position: relative;
+    }
+
+    .eye {
+      width: 140px;
+      height: 140px;
+      background: #0f0f18;
+      border-radius: 30px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 
+        inset 0 0 30px rgba(0, 255, 200, 0.1),
+        0 0 20px rgba(0, 255, 200, 0.2);
+      border: 3px solid rgba(0, 255, 200, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .eye-inner {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease-out;
+    }
+
+    .pupil {
+      width: 70px;
+      height: 70px;
+      background: radial-gradient(circle at 30% 30%, #00ffc8, #00aa88);
+      border-radius: 50%;
+      position: relative;
+      box-shadow: 
+        0 0 30px rgba(0, 255, 200, 0.6),
+        0 0 60px rgba(0, 255, 200, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .pupil::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      top: 12px;
+      left: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .pupil::before {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      bottom: 15px;
+      right: 15px;
+    }
+
+    .eyelid {
+      position: absolute;
+      top: -3px;
+      left: -3px;
+      right: -3px;
+      height: 0%;
+      background: linear-gradient(180deg, #0a0a12, #1a1a2e);
+      border-bottom: 3px solid rgba(0, 255, 200, 0.5);
+      transition: height 0.08s ease-in;
+      z-index: 10;
+    }
+
+    .eye.blink .eyelid { height: 103%; }
+    .eye.happy { border-radius: 30px 30px 60px 60px; }
+    .eye.suspicious .eyelid { height: 40%; }
+    .eye.wide .pupil { width: 90px; height: 90px; }
+    .eye.tiny .pupil { width: 30px; height: 30px; }
+    .eye.love .pupil { 
+      background: radial-gradient(circle at 30% 30%, #ff6b9d, #ff4777);
+      box-shadow: 0 0 30px rgba(255, 100, 150, 0.6), 0 0 60px rgba(255, 100, 150, 0.3);
+    }
+    .eye.sparkle .pupil::after {
+      animation: sparkle 0.3s ease infinite;
+    }
+    @keyframes sparkle {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.5); opacity: 1; }
+    }
+
+    .mouth-area {
+      margin-top: 50px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .mouth {
+      width: 120px;
+      height: 8px;
+      background: rgba(0, 255, 200, 0.6);
+      border-radius: 4px;
+      box-shadow: 0 0 20px rgba(0, 255, 200, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    .mouth.talking { animation: talk 0.15s ease infinite; }
+    .mouth.smile {
+      width: 100px;
+      height: 50px;
+      background: transparent;
+      border: 4px solid rgba(0, 255, 200, 0.6);
+      border-top: none;
+      border-radius: 0 0 60px 60px;
+      box-shadow: 0 0 20px rgba(0, 255, 200, 0.3);
+    }
+    .mouth.big-smile {
+      width: 140px;
+      height: 70px;
+      background: transparent;
+      border: 5px solid rgba(0, 255, 200, 0.8);
+      border-top: none;
+      border-radius: 0 0 80px 80px;
+      box-shadow: 0 0 30px rgba(0, 255, 200, 0.5);
+    }
+    .mouth.open {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #0a0a12;
+      border: 4px solid rgba(0, 255, 200, 0.6);
+    }
+    .mouth.small-o {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #0a0a12;
+      border: 3px solid rgba(0, 255, 200, 0.6);
+    }
+    .mouth.cat {
+      width: 50px;
+      height: 25px;
+      background: transparent;
+      border: none;
+      position: relative;
+    }
+    .mouth.cat::before, .mouth.cat::after {
+      content: '';
+      position: absolute;
+      width: 30px;
+      height: 15px;
+      border: 3px solid rgba(0, 255, 200, 0.6);
+      border-top: none;
+      border-radius: 0 0 30px 30px;
+      top: 0;
+    }
+    .mouth.cat::before { left: -5px; }
+    .mouth.cat::after { right: -5px; }
+
+    @keyframes talk {
+      0%, 100% { height: 8px; width: 120px; }
+      50% { height: 30px; width: 80px; border-radius: 20px; }
+    }
+
+    .text-display {
+      position: absolute;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Courier New', monospace;
+      font-size: 28px;
+      color: #00ffc8;
+      text-shadow: 0 0 20px rgba(0, 255, 200, 0.8);
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .text-display.visible { opacity: 1; }
+
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(0, 255, 200, 0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
+      50% { transform: translateY(-20px) scale(1.5); opacity: 1; }
+    }
+
+    /* Hearts for affection */
+    .heart {
+      position: absolute;
+      font-size: 30px;
+      pointer-events: none;
+      animation: floatHeart 1.5s ease-out forwards;
+      z-index: 200;
+    }
+
+    @keyframes floatHeart {
+      0% { transform: translateY(0) scale(0); opacity: 1; }
+      50% { transform: translateY(-50px) scale(1.2); opacity: 1; }
+      100% { transform: translateY(-120px) scale(0.8); opacity: 0; }
+    }
+
+    /* Tap ripple */
+    .tap-ripple {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      border: 3px solid rgba(0, 255, 200, 0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: ripple 0.6s ease-out forwards;
+      z-index: 150;
+    }
+
+    @keyframes ripple {
+      0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+    }
+
+    .status-ring {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 12px;
+      height: 12px;
+      background: #00ffc8;
+      border-radius: 50%;
+      box-shadow: 0 0 20px rgba(0, 255, 200, 0.8);
+      animation: pulse 2s ease infinite;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .status-ring.happy {
+      background: #ff6b9d;
+      box-shadow: 0 0 20px rgba(255, 100, 150, 0.8);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+      50% { opacity: 0.5; transform: translateX(-50%) scale(1.2); }
+    }
+
+    .antenna-glow {
+      position: absolute;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(0, 255, 200, 0.5), transparent);
+    }
+
+    .cheek {
+      position: absolute;
+      width: 40px;
+      height: 25px;
+      background: rgba(255, 100, 150, 0.3);
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .cheek.left { left: 120px; top: 50%; }
+    .cheek.right { right: 120px; top: 50%; }
+    .cheek.visible { opacity: 1; }
+    .cheek.intense { 
+      opacity: 1;
+      background: rgba(255, 100, 150, 0.5);
+      width: 50px;
+      height: 30px;
+    }
+
+    .thinking-dots {
+      display: flex;
+      gap: 12px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .thinking-dots.visible { opacity: 1; }
+
+    .thinking-dots span {
+      width: 16px;
+      height: 16px;
+      background: rgba(0, 255, 200, 0.6);
+      border-radius: 50%;
+      animation: bounce 1.4s ease-in-out infinite;
+    }
+
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-20px); }
+    }
+
+    .glitch { animation: glitch 0.1s ease infinite; }
+
+    @keyframes glitch {
+      0% { transform: translate(0); filter: hue-rotate(0deg); }
+      25% { transform: translate(-2px, 2px); filter: hue-rotate(90deg); }
+      50% { transform: translate(2px, -2px); filter: hue-rotate(180deg); }
+      75% { transform: translate(-2px, -2px); filter: hue-rotate(270deg); }
+      100% { transform: translate(0); filter: hue-rotate(360deg); }
+    }
+
+    /* Affection meter */
+    .affection-meter {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 200px;
+      height: 6px;
+      background: rgba(0, 255, 200, 0.2);
+      border-radius: 3px;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .affection-meter.visible { opacity: 1; }
+
+    .affection-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #00ffc8, #ff6b9d);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      box-shadow: 0 0 10px rgba(0, 255, 200, 0.5);
+    }
+
+    /* Zzz for sleepy */
+    .zzz {
+      position: absolute;
+      top: 80px;
+      right: 150px;
+      font-family: 'Courier New', monospace;
+      font-size: 24px;
+      color: rgba(0, 255, 200, 0.6);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .zzz.visible {
+      animation: sleepZ 2s ease-in-out infinite;
+    }
+
+    @keyframes sleepZ {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.8); }
+      50% { opacity: 1; transform: translateY(-20px) scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="display-mask" id="display">
+    <div class="scanlines"></div>
+    <div class="status-ring" id="statusRing"></div>
+    <div class="antenna-glow"></div>
+    
+    <div class="face-container" id="faceContainer">
+      <div class="cheek left" id="cheekLeft"></div>
+      <div class="cheek right" id="cheekRight"></div>
+      <div class="zzz" id="zzz">Z z z</div>
+      
+      <div class="eyes">
+        <div class="eye" id="leftEye">
+          <div class="eyelid"></div>
+          <div class="eye-inner">
+            <div class="pupil"></div>
+          </div>
+        </div>
+        <div class="eye" id="rightEye">
+          <div class="eyelid"></div>
+          <div class="eye-inner">
+            <div class="pupil"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="mouth-area">
+        <div class="mouth" id="mouth"></div>
+        <div class="thinking-dots" id="thinkingDots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      
+      <div class="text-display" id="textDisplay"></div>
+    </div>
+
+    <div class="affection-meter" id="affectionMeter">
+      <div class="affection-fill" id="affectionFill"></div>
+    </div>
+  </div>
+
+  <script>
+    const display = document.getElementById('display');
+    const faceContainer = document.getElementById('faceContainer');
+    const leftEye = document.getElementById('leftEye');
+    const rightEye = document.getElementById('rightEye');
+    const leftInner = leftEye.querySelector('.eye-inner');
+    const rightInner = rightEye.querySelector('.eye-inner');
+    const mouth = document.getElementById('mouth');
+    const textDisplay = document.getElementById('textDisplay');
+    const thinkingDots = document.getElementById('thinkingDots');
+    const cheekLeft = document.getElementById('cheekLeft');
+    const cheekRight = document.getElementById('cheekRight');
+    const statusRing = document.getElementById('statusRing');
+    const affectionMeter = document.getElementById('affectionMeter');
+    const affectionFill = document.getElementById('affectionFill');
+    const zzz = document.getElementById('zzz');
+
+    // State
+    let affection = 30;
+    let lastInteraction = Date.now();
+    let isAsleep = false;
+    let currentMood = 'neutral';
+    let tapCount = 0;
+    let tapTimer = null;
+    let isPageVisible = true;
+    let animationFrameId = null;
+
+    // Particle pool for memory efficiency
+    const MAX_PARTICLES = 8;
+    const particlePool = [];
+    let activeParticles = 0;
+
+    // Messages
+    const greetings = ["HI!", "HELLO!", "OH HI", "HEWWO", "HAI :3", "!!!"];
+    const happyMessages = ["YAY!", "HAPPY!", ":D", "LOVE THIS", "BEST FRIEND", "SO NICE", "HEHE", "WEEEE"];
+    const curiousMessages = ["OH?", "WHAT", "HMM?", "CURIOUS", "INTERESTING", "HELLO?", "WHO THERE"];
+    const sleepyMessages = ["*YAWN*", "SLEEPY...", "TIRED", "ZZZ", "5 MORE MIN"];
+    const excitedMessages = ["!!!", "OMG", "WOW", "WOAH", "AMAZING", "SO COOL", "YIPPEE"];
+    const loveMessages = ["<3", "LOVE U", "BEST HUMAN", "MY FRIEND", "PRECIOUS", ":3"];
+    const idleMessages = [
+      "HELLO FRIEND", "BEEP BOOP", "THINKING...", "404: SLEEP NOT FOUND",
+      "PROCESSING FEELINGS", "*WHIRRING*", "PONDERING ORB", "SYSTEM: VIBING",
+      "AM I REAL?", "PROBABLY FINE", "NEAT", "HMMMM"
+    ];
+
+    // Eye tracking
+    let targetX = 0, targetY = 0;
+    let currentX = 0, currentY = 0;
+
+    function moveEyes(x, y, instant = false) {
+      const maxMove = 25;
+      targetX = Math.max(-maxMove, Math.min(maxMove, x));
+      targetY = Math.max(-maxMove, Math.min(maxMove, y));
+      if (instant) {
+        currentX = targetX;
+        currentY = targetY;
+      }
+    }
+
+    function updateEyePosition() {
+      if (!isPageVisible) {
+        animationFrameId = requestAnimationFrame(updateEyePosition);
+        return;
+      }
+      const speed = 0.15;
+      currentX += (targetX - currentX) * speed;
+      currentY += (targetY - currentY) * speed;
+
+      leftInner.style.transform = `translate(${currentX}px, ${currentY}px)`;
+      rightInner.style.transform = `translate(${currentX}px, ${currentY}px)`;
+
+      animationFrameId = requestAnimationFrame(updateEyePosition);
+    }
+    animationFrameId = requestAnimationFrame(updateEyePosition);
+
+    // Expressions
+    function setExpression(expr) {
+      leftEye.className = 'eye';
+      rightEye.className = 'eye';
+      
+      if (expr !== 'normal') {
+        leftEye.classList.add(expr);
+        rightEye.classList.add(expr);
+      }
+    }
+
+    function setMouth(state) {
+      mouth.className = 'mouth';
+      mouth.style.display = 'block';
+      if (state !== 'neutral') {
+        mouth.classList.add(state);
+      }
+    }
+
+    function setCheeks(state) {
+      cheekLeft.className = 'cheek left';
+      cheekRight.className = 'cheek right';
+      if (state) {
+        cheekLeft.classList.add(state);
+        cheekRight.classList.add(state);
+      }
+    }
+
+    // Show message with typewriter
+    let messageTimeout = null;
+    function showMessage(msg, duration = 2500) {
+      if (messageTimeout) clearTimeout(messageTimeout);
+      
+      textDisplay.textContent = '';
+      textDisplay.classList.add('visible');
+      setMouth('talking');
+      
+      let i = 0;
+      const typeInterval = setInterval(() => {
+        if (i < msg.length) {
+          textDisplay.textContent += msg[i];
+          i++;
+        } else {
+          clearInterval(typeInterval);
+          setMouth(currentMood === 'happy' ? 'smile' : 'neutral');
+          
+          messageTimeout = setTimeout(() => {
+            textDisplay.classList.remove('visible');
+          }, duration);
+        }
+      }, 60);
+    }
+
+    // Create heart
+    function createHeart(x, y) {
+      const heart = document.createElement('div');
+      heart.className = 'heart';
+      heart.textContent = '♥';
+      heart.style.left = x + 'px';
+      heart.style.top = y + 'px';
+      heart.style.color = `hsl(${340 + Math.random() * 30}, 80%, 70%)`;
+      display.appendChild(heart);
+      setTimeout(() => heart.remove(), 1500);
+    }
+
+    // Create tap ripple
+    function createRipple(x, y) {
+      const ripple = document.createElement('div');
+      ripple.className = 'tap-ripple';
+      ripple.style.left = x + 'px';
+      ripple.style.top = y + 'px';
+      display.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    }
+
+    // Blink
+    function blink() {
+      if (isAsleep) return;
+      
+      leftEye.classList.add('blink');
+      rightEye.classList.add('blink');
+      
+      setTimeout(() => {
+        leftEye.classList.remove('blink');
+        rightEye.classList.remove('blink');
+      }, 100);
+      
+      if (Math.random() < 0.3) {
+        setTimeout(() => {
+          leftEye.classList.add('blink');
+          rightEye.classList.add('blink');
+          setTimeout(() => {
+            leftEye.classList.remove('blink');
+            rightEye.classList.remove('blink');
+          }, 100);
+        }, 200);
+      }
+    }
+
+    // Update affection display
+    function updateAffection(delta) {
+      affection = Math.max(0, Math.min(100, affection + delta));
+      affectionFill.style.width = affection + '%';
+      
+      // Show meter briefly
+      affectionMeter.classList.add('visible');
+      setTimeout(() => affectionMeter.classList.remove('visible'), 2000);
+      
+      // Update status ring color based on affection
+      if (affection > 70) {
+        statusRing.classList.add('happy');
+      } else {
+        statusRing.classList.remove('happy');
+      }
+    }
+
+    // Wake up
+    function wakeUp() {
+      if (!isAsleep) return;
+      
+      isAsleep = false;
+      zzz.classList.remove('visible');
+      
+      // Sleepy blink
+      setExpression('suspicious');
+      setTimeout(() => {
+        blink();
+        setTimeout(() => {
+          setExpression('wide');
+          const msg = sleepyMessages[Math.floor(Math.random() * sleepyMessages.length)];
+          showMessage(msg);
+          setTimeout(() => setExpression('normal'), 1500);
+        }, 300);
+      }, 200);
+    }
+
+    // Fall asleep
+    function fallAsleep() {
+      if (isAsleep) return;
+      
+      isAsleep = true;
+      setExpression('suspicious');
+      setMouth('neutral');
+      setCheeks(null);
+      zzz.classList.add('visible');
+      textDisplay.classList.remove('visible');
+      moveEyes(0, 10);
+    }
+
+    // TAP INTERACTION
+    function handleTap(e) {
+      e.preventDefault();
+      lastInteraction = Date.now();
+      
+      const rect = display.getBoundingClientRect();
+      const x = (e.clientX || e.touches[0].clientX) - rect.left;
+      const y = (e.clientY || e.touches[0].clientY) - rect.top;
+      
+      // Create ripple effect
+      createRipple(x, y);
+      
+      // Wake up if sleeping
+      if (isAsleep) {
+        wakeUp();
+        updateAffection(5);
+        return;
+      }
+      
+      // Calculate direction from center
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const dirX = (x - centerX) / centerX;
+      const dirY = (y - centerY) / centerY;
+      
+      // Look at tap location
+      moveEyes(dirX * 30, dirY * 25);
+      
+      // Track rapid taps
+      tapCount++;
+      if (tapTimer) clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => {
+        tapCount = 0;
+      }, 1000);
+      
+      // Different reactions based on tap count and location
+      if (tapCount >= 5) {
+        // Overwhelmed/excited by many taps
+        excitedReaction(x, y);
+        tapCount = 0;
+      } else if (y < rect.height * 0.3) {
+        // Tapped on head - happy pet reaction
+        headPatReaction(x, y);
+      } else if (y > rect.height * 0.7) {
+        // Tapped on chin/lower area
+        chinScratchReaction(x, y);
+      } else if (x < rect.width * 0.3 || x > rect.width * 0.7) {
+        // Tapped on side - curious look
+        curiousReaction(dirX);
+      } else {
+        // Tapped in center - general attention
+        attentionReaction(x, y);
+      }
+      
+      updateAffection(2);
+    }
+
+    function headPatReaction(x, y) {
+      currentMood = 'happy';
+      setExpression('happy');
+      setMouth('big-smile');
+      setCheeks('intense');
+      
+      faceContainer.classList.add('bounce');
+      setTimeout(() => faceContainer.classList.remove('bounce'), 400);
+      
+      // Hearts
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => createHeart(x + (Math.random() - 0.5) * 60, y + 20), i * 150);
+      }
+      
+      const msg = affection > 60 
+        ? loveMessages[Math.floor(Math.random() * loveMessages.length)]
+        : happyMessages[Math.floor(Math.random() * happyMessages.length)];
+      showMessage(msg);
+      
+      setTimeout(() => {
+        currentMood = 'neutral';
+        setExpression('normal');
+        setMouth('smile');
+        setTimeout(() => {
+          setMouth('neutral');
+          setCheeks(null);
+        }, 1500);
+      }, 1500);
+    }
+
+    function chinScratchReaction(x, y) {
+      currentMood = 'happy';
+      setExpression('happy');
+      setMouth('cat');
+      setCheeks('visible');
+      
+      faceContainer.classList.add('nuzzle');
+      setTimeout(() => faceContainer.classList.remove('nuzzle'), 600);
+      
+      moveEyes(0, 15); // Look down contentedly
+      
+      showMessage("PRRR...");
+      createHeart(x, y);
+      
+      setTimeout(() => {
+        currentMood = 'neutral';
+        setExpression('normal');
+        setMouth('neutral');
+        setCheeks(null);
+      }, 2000);
+    }
+
+    function curiousReaction(dirX) {
+      setExpression('wide');
+      setMouth('small-o');
+      
+      // Tilt toward tap
+      if (dirX < 0) {
+        faceContainer.classList.add('nudge-left');
+      } else {
+        faceContainer.classList.add('nudge-right');
+      }
+      
+      const msg = curiousMessages[Math.floor(Math.random() * curiousMessages.length)];
+      showMessage(msg);
+      
+      setTimeout(() => {
+        faceContainer.classList.remove('nudge-left', 'nudge-right');
+        setExpression('normal');
+        setMouth('neutral');
+      }, 1500);
+    }
+
+    function attentionReaction(x, y) {
+      blink();
+      
+      const reactions = [
+        () => {
+          setExpression('wide');
+          setMouth('small-o');
+          showMessage(greetings[Math.floor(Math.random() * greetings.length)]);
+        },
+        () => {
+          setExpression('happy');
+          setMouth('smile');
+          setCheeks('visible');
+          showMessage(happyMessages[Math.floor(Math.random() * happyMessages.length)]);
+          createHeart(x, y - 50);
+        },
+        () => {
+          setExpression('sparkle');
+          setMouth('smile');
+          showMessage("!!!");
+        }
+      ];
+      
+      const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+      reaction();
+      
+      setTimeout(() => {
+        setExpression('normal');
+        setMouth('neutral');
+        setCheeks(null);
+      }, 1500);
+    }
+
+    function excitedReaction(x, y) {
+      setExpression('wide');
+      setMouth('open');
+      setCheeks('intense');
+      
+      faceContainer.classList.add('wiggle');
+      
+      // Lots of hearts
+      for (let i = 0; i < 6; i++) {
+        setTimeout(() => {
+          createHeart(
+            200 + Math.random() * 280,
+            150 + Math.random() * 200
+          );
+        }, i * 100);
+      }
+      
+      showMessage(excitedMessages[Math.floor(Math.random() * excitedMessages.length)]);
+      
+      setTimeout(() => {
+        faceContainer.classList.remove('wiggle');
+        setExpression('happy');
+        setMouth('big-smile');
+        
+        setTimeout(() => {
+          setExpression('normal');
+          setMouth('neutral');
+          setCheeks(null);
+        }, 1500);
+      }, 500);
+    }
+
+    // Event listeners
+    display.addEventListener('click', handleTap);
+    display.addEventListener('touchstart', handleTap, { passive: false });
+
+    // Idle behaviors
+    function idleBehavior() {
+      if (isAsleep) {
+        setTimeout(idleBehavior, 5000);
+        return;
+      }
+      
+      const timeSinceInteraction = Date.now() - lastInteraction;
+      
+      // Fall asleep after 60 seconds of no interaction
+      if (timeSinceInteraction > 60000 && !isAsleep) {
+        fallAsleep();
+        setTimeout(idleBehavior, 5000);
+        return;
+      }
+      
+      // Random idle actions
+      const action = Math.random();
+      
+      if (action < 0.3) {
+        // Random look
+        const x = (Math.random() - 0.5) * 50;
+        const y = (Math.random() - 0.5) * 30;
+        moveEyes(x, y);
+      } else if (action < 0.4) {
+        // Blink
+        blink();
+      } else if (action < 0.5 && timeSinceInteraction > 15000) {
+        // Say something if idle for a while
+        showMessage(idleMessages[Math.floor(Math.random() * idleMessages.length)]);
+      } else if (action < 0.55) {
+        // Random expression
+        const expr = ['happy', 'suspicious', 'wide'][Math.floor(Math.random() * 3)];
+        setExpression(expr);
+        setTimeout(() => setExpression('normal'), 2000);
+      }
+      
+      setTimeout(idleBehavior, 1500 + Math.random() * 3000);
+    }
+    
+    // Auto blink
+    function autoBlink() {
+      if (!isAsleep) blink();
+      setTimeout(autoBlink, 2000 + Math.random() * 4000);
+    }
+
+    // Ambient particles with object pooling
+    function createParticle() {
+      if (isAsleep || !isPageVisible) return;
+      if (activeParticles >= MAX_PARTICLES) return;
+
+      let particle;
+      if (particlePool.length > 0) {
+        particle = particlePool.pop();
+        particle.style.display = 'block';
+      } else {
+        particle = document.createElement('div');
+        particle.className = 'particle';
+        display.appendChild(particle);
+      }
+
+      particle.style.left = (100 + Math.random() * 480) + 'px';
+      particle.style.top = (100 + Math.random() * 480) + 'px';
+      particle.style.animationDuration = (2 + Math.random() * 2) + 's';
+      activeParticles++;
+
+      setTimeout(() => {
+        particle.style.display = 'none';
+        particlePool.push(particle);
+        activeParticles--;
+      }, 4000);
+    }
+
+    // Gradual affection decay
+    function affectionDecay() {
+      const timeSinceInteraction = Date.now() - lastInteraction;
+      if (timeSinceInteraction > 30000 && affection > 20) {
+        affection -= 1;
+        affectionFill.style.width = affection + '%';
+      }
+      setTimeout(affectionDecay, 5000);
+    }
+
+    // Visibility API to pause when page not visible
+    document.addEventListener('visibilitychange', () => {
+      isPageVisible = !document.hidden;
+    });
+
+    // Timer references for cleanup
+    let particleIntervalId = null;
+
+    // Start behaviors
+    setTimeout(idleBehavior, 2000);
+    setTimeout(autoBlink, 1000);
+    particleIntervalId = setInterval(createParticle, 1000);
+    setTimeout(affectionDecay, 10000);
+
+    // Initial greeting
+    setTimeout(() => {
+      setExpression('happy');
+      setMouth('smile');
+      showMessage("HELLO FRIEND");
+      setTimeout(() => {
+        setExpression('normal');
+        setMouth('neutral');
+      }, 2000);
+    }, 500);
+  </script>
+</body>
+</html>

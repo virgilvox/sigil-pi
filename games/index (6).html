@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=720, height=720, user-scalable=no, initial-scale=1.0, maximum-scale=1.0">
+  <title>CARROM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 720px;
+      height: 720px;
+      overflow: hidden;
+      background: #000;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    #c { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c" width="720" height="720"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+const boardCanvas = document.createElement('canvas');
+boardCanvas.width = 720;
+boardCanvas.height = 720;
+const boardCtx = boardCanvas.getContext('2d');
+
+const W = 720, H = 720, CX = 360, CY = 360;
+const BOARD_R = 290, WALL_INNER = 290, WALL_OUTER = 345;
+const POCKET_R = 24, PIECE_R = 14, STRIKER_R = 18;
+const PI2 = Math.PI * 2;
+
+const FRICTION = 0.988, WALL_FRICTION = 0.78, RESTITUTION = 0.92;
+const MIN_VEL_SQ = 0.01, MAX_POWER = 22, SUBSTEPS = 4, DT = 1 / SUBSTEPS;
+
+const POCKETS = [
+  { x: CX - 182, y: CY - 182 }, { x: CX + 182, y: CY - 182 },
+  { x: CX - 182, y: CY + 182 }, { x: CX + 182, y: CY + 182 }
+];
+const POCKET_R_SQ = (POCKET_R + 4) * (POCKET_R + 4);
+const ZONE_WIDTH = 200;
+
+const ZONES = [
+  { x: CX, y: CY + 150, horizontal: true },
+  { x: CX + 150, y: CY, horizontal: false },
+  { x: CX, y: CY - 150, horizontal: true },
+  { x: CX - 150, y: CY, horizontal: false }
+];
+
+// ========== RULES CONFIG ==========
+let playerCount = 2; // 2 or 4 - selected on home screen
+
+const rules = {
+  colorAssign: 0,
+  queenRule: 0,
+  queenPoints: 0,
+  foulPenalty: 0,
+  opponentPocket: 0,
+  continuation: 0,
+  winCondition: 0,
+  backwards: 0
+};
+
+let teamAssign = [0, 1, 0, 1];
+
+const ruleOptions = {
+  colorAssign: ['First Pocket', 'Team 1 = White', 'Team 1 = Black'],
+  queenRule: ['Cover Required', 'Anytime', 'After 1st Piece', 'Before Last'],
+  queenPoints: ['3 Points', '5 Points'],
+  foulPenalty: ['Lose 1 Point', 'Return a Piece'],
+  opponentPocket: ['No Penalty', 'Foul + Penalty'],
+  continuation: ['Continue on Pocket', 'Single Shot'],
+  winCondition: ['Clear All Pieces', 'First to 25', 'First to 50'],
+  backwards: ['Allowed', 'Not Allowed']
+};
+
+const ruleLabels = {
+  colorAssign: 'Color Assignment',
+  queenRule: 'Queen Rules',
+  queenPoints: 'Queen Value',
+  foulPenalty: 'Foul Penalty',
+  opponentPocket: 'Opponent Piece',
+  continuation: 'Turn Continue',
+  winCondition: 'Win Condition',
+  backwards: 'Backward Shots'
+};
+
+function getQueenValue() { return rules.queenPoints === 0 ? 3 : 5; }
+function getWinTarget() { return rules.winCondition === 0 ? 0 : (rules.winCondition === 1 ? 25 : 50); }
+function is4Player() { return playerCount === 4; }
+
+let gameState = 'menu';
+let selectedRule = 0;
+const ruleKeys = Object.keys(ruleLabels);
+
+// ========== AUDIO ==========
+let audioCtx = null, noiseBuffer = null, audioEnabled = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const sz = audioCtx.sampleRate * 0.5;
+    noiseBuffer = audioCtx.createBuffer(1, sz, audioCtx.sampleRate);
+    const d = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < sz; i++) d[i] = Math.random() * 2 - 1;
+    audioEnabled = true;
+  } catch (e) { audioEnabled = false; }
+}
+
+function playClick() {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.value = 800;
+  const g = audioCtx.createGain(); g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.06);
+}
+
+function playHit(intensity) {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime, vol = Math.min(0.55, 0.12 + intensity * 0.1);
+  const n = audioCtx.createBufferSource(); n.buffer = noiseBuffer;
+  const nf = audioCtx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2800 + Math.random() * 1200; nf.Q.value = 1.5;
+  const ng = audioCtx.createGain(); ng.gain.setValueAtTime(vol * 0.6, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+  n.connect(nf); nf.connect(ng); ng.connect(audioCtx.destination); n.start(t); n.stop(t + 0.025);
+  const b = audioCtx.createOscillator(); b.type = 'sine'; b.frequency.setValueAtTime(1100 + Math.random() * 200, t); b.frequency.exponentialRampToValueAtTime(350, t + 0.05);
+  const bf = audioCtx.createBiquadFilter(); bf.type = 'bandpass'; bf.frequency.value = 700; bf.Q.value = 2.5;
+  const bg = audioCtx.createGain(); bg.gain.setValueAtTime(vol * 0.35, t); bg.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+  b.connect(bf); bf.connect(bg); bg.connect(audioCtx.destination); b.start(t); b.stop(t + 0.08);
+}
+
+function playWall(intensity) {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime, vol = Math.min(0.45, 0.08 + intensity * 0.07);
+  const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(160 + Math.random() * 30, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.1);
+  const og = audioCtx.createGain(); og.gain.setValueAtTime(vol * 0.7, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  o.connect(og); og.connect(audioCtx.destination); o.start(t); o.stop(t + 0.13);
+}
+
+function playPocket() {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime;
+  const d = audioCtx.createOscillator(); d.type = 'sine'; d.frequency.setValueAtTime(180, t); d.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+  const dg = audioCtx.createGain(); dg.gain.setValueAtTime(0.4, t); dg.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  d.connect(dg); dg.connect(audioCtx.destination); d.start(t); d.stop(t + 0.16);
+  for (let i = 0; i < 3; i++) {
+    const del = 0.03 + i * 0.04 + Math.random() * 0.015;
+    const r = audioCtx.createOscillator(); r.type = 'sine'; r.frequency.setValueAtTime(280 + Math.random() * 150, t + del); r.frequency.exponentialRampToValueAtTime(90, t + del + 0.035);
+    const rg = audioCtx.createGain(); rg.gain.setValueAtTime(0.12 * (1 - i * 0.25), t + del); rg.gain.exponentialRampToValueAtTime(0.001, t + del + 0.04);
+    r.connect(rg); rg.connect(audioCtx.destination); r.start(t + del); r.stop(t + del + 0.05);
+  }
+}
+
+function playShoot(power) {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime, vol = 0.15 + power * 0.25;
+  const s = audioCtx.createBufferSource(); s.buffer = noiseBuffer;
+  const sf = audioCtx.createBiquadFilter(); sf.type = 'bandpass'; sf.frequency.setValueAtTime(1800, t); sf.frequency.exponentialRampToValueAtTime(3500, t + 0.025); sf.Q.value = 0.8;
+  const sg = audioCtx.createGain(); sg.gain.setValueAtTime(vol * 0.25, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+  s.connect(sf); sf.connect(sg); sg.connect(audioCtx.destination); s.start(t); s.stop(t + 0.05);
+  const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(100, t + 0.06);
+  const og = audioCtx.createGain(); og.gain.setValueAtTime(vol * 0.4, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o.connect(og); og.connect(audioCtx.destination); o.start(t); o.stop(t + 0.1);
+}
+
+function playFoul() {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime;
+  const o1 = audioCtx.createOscillator(), o2 = audioCtx.createOscillator();
+  o1.type = o2.type = 'sine'; o1.frequency.value = 175; o2.frequency.value = 180;
+  const g = audioCtx.createGain(); g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  o1.connect(g); o2.connect(g); g.connect(audioCtx.destination); o1.start(t); o2.start(t); o1.stop(t + 0.37); o2.stop(t + 0.37);
+}
+
+function playWin() {
+  if (!audioEnabled) return;
+  const t = audioCtx.currentTime;
+  [261.6, 329.6, 392, 523.2].forEach((f, i) => {
+    const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + i * 0.09 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.5);
+    o.connect(g); g.connect(audioCtx.destination); o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.55);
+  });
+}
+
+// ========== GAME STATE ==========
+let pieces = [], striker = { x: CX, y: CY + 150, vx: 0, vy: 0, active: true };
+let currentPlayer = 0;
+let teamScores = [0, 0];
+let phase = 0, sliderPos = 0.5, dragMode = 0;
+let aimStartX = 0, aimStartY = 0, aimCurX = 0, aimCurY = 0;
+let message = '', msgTimer = 0, queenClaimed = false, needCover = false, gameOver = false;
+let teamColors = [0, 0];
+let hasPocketedOwn = [false, false];
+
+let turnPocketedWhite = 0, turnPocketedBlack = 0, turnPocketedQueen = false, turnPocketedStriker = false;
+
+const pieceImages = {};
+const TEAM_COLORS = ['#ff6b6b', '#4ecdc4'];
+const TEAM_NAMES = ['RED', 'CYAN'];
+
+function createPieceImage(c1, c2, r) {
+  const sz = r * 2 + 4, c = document.createElement('canvas');
+  c.width = c.height = sz;
+  const x = c.getContext('2d'), cx = sz / 2;
+  x.fillStyle = 'rgba(0,0,0,0.4)';
+  x.beginPath(); x.arc(cx + 2, cx + 2, r, 0, PI2); x.fill();
+  x.beginPath(); x.arc(cx, cx, r, 0, PI2);
+  const g = x.createRadialGradient(cx - r * 0.3, cx - r * 0.3, 0, cx, cx, r);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  x.fillStyle = g; x.fill();
+  x.beginPath(); x.arc(cx, cx, r * 0.5, 0, PI2);
+  x.strokeStyle = c1 === '#2a2a2a' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)';
+  x.lineWidth = 1.5; x.stroke();
+  return c;
+}
+
+function initPieceImages() {
+  pieceImages.white = createPieceImage('#fffef8', '#c8c4b8', PIECE_R);
+  pieceImages.black = createPieceImage('#2a2a2a', '#080808', PIECE_R);
+  pieceImages.queen = createPieceImage('#ff5555', '#991111', PIECE_R);
+  pieceImages.striker = [
+    createPieceImage('#ffcccc', '#ff6666', STRIKER_R),
+    createPieceImage('#ccffff', '#44bbbb', STRIKER_R),
+    createPieceImage('#ffffcc', '#bbbb44', STRIKER_R),
+    createPieceImage('#ffccff', '#bb44bb', STRIKER_R)
+  ];
+}
+
+function renderBoard() {
+  const x = boardCtx;
+  x.fillStyle = '#060606'; x.fillRect(0, 0, W, H);
+  x.beginPath(); x.arc(CX, CY, 358, 0, PI2); x.fillStyle = '#1c1008'; x.fill();
+  
+  x.save();
+  x.beginPath(); x.arc(CX, CY, WALL_OUTER, 0, PI2); x.arc(CX, CY, WALL_INNER, 0, PI2, true); x.clip();
+  x.fillStyle = '#3d2816'; x.fillRect(0, 0, W, H);
+  x.strokeStyle = 'rgba(80,50,25,0.4)'; x.lineWidth = 2;
+  for (let a = 0; a < PI2; a += 0.08) {
+    const r1 = WALL_INNER + Math.sin(a * 8) * 3, r2 = WALL_OUTER - Math.sin(a * 8) * 3;
+    x.beginPath(); x.moveTo(CX + Math.cos(a) * r1, CY + Math.sin(a) * r1);
+    x.lineTo(CX + Math.cos(a) * r2, CY + Math.sin(a) * r2); x.stroke();
+  }
+  x.restore();
+  
+  x.beginPath(); x.arc(CX, CY, WALL_INNER + 1, Math.PI * 0.7, Math.PI * 1.8);
+  x.strokeStyle = 'rgba(255,200,150,0.18)'; x.lineWidth = 3; x.stroke();
+  x.beginPath(); x.arc(CX, CY, WALL_INNER + 1, -Math.PI * 0.3, Math.PI * 0.7);
+  x.strokeStyle = 'rgba(0,0,0,0.35)'; x.stroke();
+  
+  x.beginPath(); x.arc(CX, CY, BOARD_R, 0, PI2);
+  const sg = x.createRadialGradient(CX - 50, CY - 50, 0, CX, CY, BOARD_R);
+  sg.addColorStop(0, '#e8d4b8'); sg.addColorStop(1, '#c9a87a');
+  x.fillStyle = sg; x.fill();
+  
+  x.save(); x.beginPath(); x.arc(CX, CY, BOARD_R - 1, 0, PI2); x.clip();
+  x.globalAlpha = 0.06;
+  for (let i = -300; i < 300; i += 6) {
+    x.strokeStyle = i % 12 === 0 ? '#8b6914' : '#a08050';
+    x.lineWidth = i % 18 === 0 ? 2 : 1;
+    x.beginPath(); x.moveTo(CX + i, CY - 300);
+    x.bezierCurveTo(CX + i + 10, CY - 100, CX + i - 10, CY + 100, CX + i, CY + 300); x.stroke();
+  }
+  x.restore();
+  
+  x.strokeStyle = '#2a1a0a'; x.lineWidth = 3; x.strokeRect(CX - 175, CY - 175, 350, 350);
+  x.strokeStyle = '#3d2a15'; x.lineWidth = 1.5; x.strokeRect(CX - 168, CY - 168, 336, 336);
+  
+  x.fillStyle = '#4a3520';
+  POCKETS.forEach(p => {
+    const ax = p.x < CX ? 1 : -1, ay = p.y < CY ? 1 : -1;
+    const bx = p.x + ax * 45, by = p.y + ay * 45;
+    x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + ax * 25, by); x.lineTo(bx, by + ay * 25); x.closePath(); x.fill();
+  });
+  
+  x.strokeStyle = 'rgba(50,35,20,0.25)'; x.lineWidth = 1.5; x.beginPath();
+  POCKETS.forEach(p => { x.moveTo(CX, CY); x.lineTo(p.x, p.y); }); x.stroke();
+  
+  x.strokeStyle = '#3d2a15'; x.lineWidth = 2.5; x.beginPath(); x.arc(CX, CY, 72, 0, PI2); x.stroke();
+  x.beginPath(); x.arc(CX, CY, 70, 0, PI2);
+  const cg = x.createRadialGradient(CX, CY, 0, CX, CY, 70);
+  cg.addColorStop(0, 'rgba(200,160,100,0.15)'); cg.addColorStop(0.7, 'rgba(200,160,100,0.05)'); cg.addColorStop(1, 'rgba(200,160,100,0.15)');
+  x.fillStyle = cg; x.fill();
+  x.strokeStyle = '#4a3520'; x.lineWidth = 1.5;
+  x.beginPath(); x.arc(CX, CY, 55, 0, PI2); x.stroke();
+  x.beginPath(); x.arc(CX, CY, 22, 0, PI2); x.stroke();
+  x.beginPath(); x.arc(CX, CY, 4, 0, PI2); x.fillStyle = '#3d2a15'; x.fill();
+  
+  x.strokeStyle = '#4a3520'; x.lineWidth = 2;
+  const zl = CX - ZONE_WIDTH / 2, zr = CX + ZONE_WIDTH / 2;
+  [CY + 150, CY - 150].forEach(y => {
+    x.beginPath(); x.moveTo(zl, y); x.lineTo(zr, y); x.stroke();
+    x.beginPath(); x.arc(zl, y, 8, 0, PI2); x.stroke();
+    x.beginPath(); x.arc(zr, y, 8, 0, PI2); x.stroke();
+    x.beginPath(); x.arc(zl, y, 3, 0, PI2); x.fill();
+    x.beginPath(); x.arc(zr, y, 3, 0, PI2); x.fill();
+  });
+  const zt = CY - ZONE_WIDTH / 2, zb = CY + ZONE_WIDTH / 2;
+  [CX + 150, CX - 150].forEach(xx => {
+    x.beginPath(); x.moveTo(xx, zt); x.lineTo(xx, zb); x.stroke();
+    x.beginPath(); x.arc(xx, zt, 8, 0, PI2); x.stroke();
+    x.beginPath(); x.arc(xx, zb, 8, 0, PI2); x.stroke();
+    x.beginPath(); x.arc(xx, zt, 3, 0, PI2); x.fill();
+    x.beginPath(); x.arc(xx, zb, 3, 0, PI2); x.fill();
+  });
+  
+  x.strokeStyle = '#4a3520'; x.lineWidth = 1.5;
+  x.beginPath(); x.arc(CX, CY + 150, 25, Math.PI * 1.15, Math.PI * 1.85); x.stroke();
+  x.beginPath(); x.arc(CX, CY - 150, 25, Math.PI * 0.15, Math.PI * 0.85); x.stroke();
+  x.beginPath(); x.arc(CX + 150, CY, 25, Math.PI * 0.65, Math.PI * 1.35); x.stroke();
+  x.beginPath(); x.arc(CX - 150, CY, 25, -Math.PI * 0.35, Math.PI * 0.35); x.stroke();
+  
+  POCKETS.forEach(p => {
+    x.beginPath(); x.arc(p.x, p.y, POCKET_R + 10, 0, PI2); x.fillStyle = '#1a0a04'; x.fill();
+    const pg = x.createRadialGradient(p.x, p.y, 0, p.x, p.y, POCKET_R + 8);
+    pg.addColorStop(0, '#000'); pg.addColorStop(0.6, '#0a0402'); pg.addColorStop(1, '#201008');
+    x.beginPath(); x.arc(p.x, p.y, POCKET_R + 8, 0, PI2); x.fillStyle = pg; x.fill();
+  });
+  
+  x.globalCompositeOperation = 'destination-in';
+  x.beginPath(); x.arc(CX, CY, 358, 0, PI2); x.fill();
+  x.globalCompositeOperation = 'source-over';
+}
+
+function getPlayerTeam(p) {
+  if (is4Player()) return teamAssign[p];
+  return p;
+}
+
+function countPieces(color) {
+  let count = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    if (pieces[i].type === color && !pieces[i].sunk) count++;
+  }
+  return count;
+}
+
+function initGame() {
+  pieces = []; teamScores = [0, 0]; currentPlayer = 0; phase = 0; sliderPos = 0.5;
+  queenClaimed = needCover = gameOver = false;
+  hasPocketedOwn = [false, false];
+  
+  if (rules.colorAssign === 1) { teamColors = [1, 2]; }
+  else if (rules.colorAssign === 2) { teamColors = [2, 1]; }
+  else { teamColors = [0, 0]; }
+  
+  pieces.push({ x: CX, y: CY, vx: 0, vy: 0, type: 0, sunk: false });
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3 + Math.PI / 6;
+    pieces.push({ x: CX + Math.cos(a) * 26, y: CY + Math.sin(a) * 26, vx: 0, vy: 0, type: i % 2 === 0 ? 1 : 2, sunk: false });
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6;
+    pieces.push({ x: CX + Math.cos(a) * 52, y: CY + Math.sin(a) * 52, vx: 0, vy: 0, type: i % 2 === 0 ? 1 : 2, sunk: false });
+  }
+  
+  resetStriker();
+  message = 'P' + (currentPlayer + 1) + ' START';
+  msgTimer = 100;
+  gameState = 'play';
+}
+
+function getStrikerPosition() {
+  const zone = ZONES[currentPlayer];
+  if (zone.horizontal) {
+    return { x: CX - ZONE_WIDTH/2 + sliderPos * ZONE_WIDTH, y: zone.y };
+  } else {
+    return { x: zone.x, y: CY - ZONE_WIDTH/2 + sliderPos * ZONE_WIDTH };
+  }
+}
+
+function getShootDirection() {
+  const dirs = [{ x: 0, y: -1 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }];
+  return dirs[currentPlayer];
+}
+
+function resetStriker() {
+  sliderPos = 0.5;
+  const pos = getStrikerPosition();
+  striker.x = pos.x; striker.y = pos.y;
+  striker.vx = striker.vy = 0;
+  striker.active = true;
+  phase = 0;
+}
+
+function resetTurnTracking() {
+  turnPocketedWhite = turnPocketedBlack = 0;
+  turnPocketedQueen = turnPocketedStriker = false;
+}
+
+function distSq(ax, ay, bx, by) { const dx = bx - ax, dy = by - ay; return dx * dx + dy * dy; }
+
+function physics() {
+  if (phase !== 2) return;
+  
+  for (let step = 0; step < SUBSTEPS; step++) {
+    if (striker.active) { striker.x += striker.vx * DT; striker.y += striker.vy * DT; }
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i]; if (p.sunk) continue;
+      p.x += p.vx * DT; p.y += p.vy * DT;
+    }
+    if (striker.active) {
+      for (let i = 0; i < pieces.length; i++) {
+        if (!pieces[i].sunk) collide(striker, STRIKER_R, pieces[i], PIECE_R);
+      }
+    }
+    for (let i = 0; i < pieces.length; i++) {
+      if (pieces[i].sunk) continue;
+      for (let j = i + 1; j < pieces.length; j++) {
+        if (!pieces[j].sunk) collide(pieces[i], PIECE_R, pieces[j], PIECE_R);
+      }
+    }
+    if (striker.active) wallBounce(striker, STRIKER_R);
+    for (let i = 0; i < pieces.length; i++) if (!pieces[i].sunk) wallBounce(pieces[i], PIECE_R);
+    
+    if (striker.active) {
+      for (let i = 0; i < 4; i++) {
+        if (distSq(striker.x, striker.y, POCKETS[i].x, POCKETS[i].y) < POCKET_R_SQ) {
+          striker.active = false; turnPocketedStriker = true; playPocket(); break;
+        }
+      }
+    }
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i]; if (p.sunk) continue;
+      for (let j = 0; j < 4; j++) {
+        if (distSq(p.x, p.y, POCKETS[j].x, POCKETS[j].y) < POCKET_R_SQ) {
+          p.sunk = true; p.vx = p.vy = 0;
+          if (p.type === 0) turnPocketedQueen = true;
+          else if (p.type === 1) turnPocketedWhite++;
+          else if (p.type === 2) turnPocketedBlack++;
+          playPocket(); break;
+        }
+      }
+    }
+  }
+  
+  if (striker.active) { striker.vx *= FRICTION; striker.vy *= FRICTION; }
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i]; if (!p.sunk) { p.vx *= FRICTION; p.vy *= FRICTION; }
+  }
+  
+  let moving = false;
+  if (striker.active) {
+    if (striker.vx * striker.vx + striker.vy * striker.vy > MIN_VEL_SQ) moving = true;
+    else striker.vx = striker.vy = 0;
+  }
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (!p.sunk) {
+      if (p.vx * p.vx + p.vy * p.vy > MIN_VEL_SQ) moving = true;
+      else p.vx = p.vy = 0;
+    }
+  }
+  if (!moving) endTurn();
+}
+
+function collide(a, ra, b, rb) {
+  const dx = b.x - a.x, dy = b.y - a.y, dSq = dx * dx + dy * dy;
+  const minD = ra + rb, minDSq = minD * minD;
+  if (dSq < minDSq && dSq > 0.0001) {
+    const d = Math.sqrt(dSq), nx = dx / d, ny = dy / d;
+    const overlap = minD - d;
+    const mA = ra * ra, mB = rb * rb, tot = mA + mB;
+    const rA = mB / tot, rB = mA / tot;
+    a.x -= nx * overlap * rA; a.y -= ny * overlap * rA;
+    b.x += nx * overlap * rB; b.y += ny * overlap * rB;
+    const dvx = a.vx - b.vx, dvy = a.vy - b.vy, dvn = dvx * nx + dvy * ny;
+    if (dvn > 0) {
+      playHit(dvn);
+      const imp = dvn * RESTITUTION;
+      a.vx -= imp * nx * rA * 2; a.vy -= imp * ny * rA * 2;
+      b.vx += imp * nx * rB * 2; b.vy += imp * ny * rB * 2;
+    }
+  }
+}
+
+function wallBounce(obj, r) {
+  const dx = obj.x - CX, dy = obj.y - CY, dSq = dx * dx + dy * dy;
+  const limit = WALL_INNER - r, limitSq = limit * limit;
+  if (dSq > limitSq) {
+    const d = Math.sqrt(dSq), nx = dx / d, ny = dy / d;
+    obj.x = CX + nx * limit; obj.y = CY + ny * limit;
+    const vn = obj.vx * nx + obj.vy * ny;
+    if (vn > 0) { playWall(vn); obj.vx -= 2 * vn * nx; obj.vy -= 2 * vn * ny; obj.vx *= WALL_FRICTION; obj.vy *= WALL_FRICTION; }
+  }
+}
+
+function returnPieceToBoard(color) {
+  for (let i = 0; i < pieces.length; i++) {
+    if (pieces[i].type === color && pieces[i].sunk) {
+      pieces[i].sunk = false;
+      const angle = Math.random() * PI2;
+      pieces[i].x = CX + Math.cos(angle) * 35;
+      pieces[i].y = CY + Math.sin(angle) * 35;
+      pieces[i].vx = pieces[i].vy = 0;
+      return true;
+    }
+  }
+  return false;
+}
+
+function returnQueen() {
+  for (let i = 0; i < pieces.length; i++) {
+    if (pieces[i].type === 0) {
+      pieces[i].sunk = false; pieces[i].x = CX; pieces[i].y = CY;
+      pieces[i].vx = pieces[i].vy = 0; break;
+    }
+  }
+}
+
+function applyFoulPenalty(team) {
+  if (rules.foulPenalty === 0) {
+    teamScores[team] = Math.max(0, teamScores[team] - 1);
+    return 'FOUL -1';
+  } else {
+    const myColor = teamColors[team];
+    if (myColor !== 0 && returnPieceToBoard(myColor)) return 'FOUL - PIECE BACK';
+    return 'FOUL';
+  }
+}
+
+function endTurn() {
+  const myTeam = getPlayerTeam(currentPlayer);
+  const oppTeam = 1 - myTeam;
+  let foul = false, continuePlay = false;
+  message = '';
+  
+  if (rules.colorAssign === 0 && teamColors[myTeam] === 0) {
+    if (turnPocketedWhite > 0 || turnPocketedBlack > 0) {
+      const assignColor = turnPocketedWhite >= turnPocketedBlack ? 1 : 2;
+      teamColors[myTeam] = assignColor;
+      teamColors[oppTeam] = assignColor === 1 ? 2 : 1;
+    }
+  }
+  
+  const myColor = teamColors[myTeam];
+  const oppColor = teamColors[oppTeam];
+  const pocketedOwn = myColor === 1 ? turnPocketedWhite : (myColor === 2 ? turnPocketedBlack : 0);
+  const pocketedOpp = oppColor === 1 ? turnPocketedWhite : (oppColor === 2 ? turnPocketedBlack : 0);
+  
+  if (pocketedOwn > 0) hasPocketedOwn[myTeam] = true;
+  
+  if (turnPocketedStriker) {
+    foul = true;
+    message = applyFoulPenalty(myTeam);
+    playFoul();
+  }
+  
+  if (!foul && rules.opponentPocket === 1 && pocketedOpp > 0) {
+    foul = true;
+    message = applyFoulPenalty(myTeam);
+    playFoul();
+  }
+  
+  if (turnPocketedQueen && !queenClaimed) {
+    let queenValid = true;
+    if (rules.queenRule === 2) {
+      if (!hasPocketedOwn[myTeam] && pocketedOwn === 0) queenValid = false;
+    } else if (rules.queenRule === 3) {
+      if (myColor !== 0 && countPieces(myColor) === 0) queenValid = false;
+    }
+    
+    if (foul || !queenValid) {
+      returnQueen();
+      if (!queenValid && !foul) message = 'QUEEN RETURNED';
+    } else if (rules.queenRule === 1) {
+      teamScores[myTeam] += getQueenValue();
+      queenClaimed = true;
+      message = 'QUEEN +' + getQueenValue();
+      continuePlay = true;
+    } else {
+      if (pocketedOwn > 0) {
+        teamScores[myTeam] += getQueenValue();
+        queenClaimed = true;
+        message = 'QUEEN +' + getQueenValue();
+        continuePlay = true;
+      } else {
+        needCover = true;
+        message = 'COVER QUEEN!';
+        continuePlay = true;
+      }
+    }
+  } else if (needCover && !foul) {
+    if (pocketedOwn > 0) {
+      teamScores[myTeam] += getQueenValue();
+      queenClaimed = true;
+      needCover = false;
+      message = 'COVERED +' + getQueenValue();
+      continuePlay = true;
+    } else {
+      returnQueen();
+      needCover = false;
+      message = 'QUEEN BACK';
+    }
+  }
+  
+  if (!foul && pocketedOwn > 0) {
+    teamScores[myTeam] += pocketedOwn;
+    continuePlay = true;
+  }
+  
+  if (foul) {
+    if (turnPocketedQueen && !queenClaimed) returnQueen();
+    needCover = false;
+    continuePlay = false;
+  }
+  
+  let won = false;
+  const target = getWinTarget();
+  if (rules.winCondition === 0) {
+    if (myColor !== 0 && countPieces(myColor) === 0 && (queenClaimed || !needCover)) won = true;
+  } else {
+    if (teamScores[myTeam] >= target) won = true;
+  }
+  
+  if (won) {
+    gameOver = true;
+    if (is4Player()) {
+      const winners = [];
+      for (let i = 0; i < 4; i++) if (teamAssign[i] === myTeam) winners.push('P' + (i + 1));
+      message = winners.join('+') + ' WIN!';
+    } else {
+      message = 'P' + (currentPlayer + 1) + ' WINS!';
+    }
+    msgTimer = 200;
+    playWin();
+    resetTurnTracking();
+    return;
+  }
+  
+  if (rules.continuation === 1) continuePlay = false;
+  
+  msgTimer = 100;
+  resetTurnTracking();
+  
+  if (continuePlay && !foul) {
+    resetStriker();
+    if (message === '') message = 'GO AGAIN';
+  } else {
+    nextPlayer();
+  }
+}
+
+function nextPlayer() {
+  const numPlayers = is4Player() ? 4 : 2;
+  currentPlayer = (currentPlayer + 1) % numPlayers;
+  resetStriker();
+  message = 'P' + (currentPlayer + 1) + ' GO';
+  msgTimer = 100;
+}
+
+// ========== DRAWING ==========
+function drawMenu() {
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  ctx.beginPath(); ctx.arc(CX, CY, 340, 0, PI2);
+  const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, 340);
+  bg.addColorStop(0, '#1a1510'); bg.addColorStop(1, '#0a0805');
+  ctx.fillStyle = bg; ctx.fill();
+  ctx.beginPath(); ctx.arc(CX, CY, 338, 0, PI2);
+  ctx.strokeStyle = '#3d2a15'; ctx.lineWidth = 4; ctx.stroke();
+  
+  ctx.font = 'bold 48px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#d4a574'; ctx.fillText('CARROM', CX, 130);
+  ctx.strokeStyle = '#4a3520'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(CX - 120, 155); ctx.lineTo(CX + 120, 155); ctx.stroke();
+  
+  // Player count selector
+  ctx.font = '14px monospace'; ctx.fillStyle = '#888';
+  ctx.fillText('PLAYERS', CX, 200);
+  
+  // 2 Player button
+  const p2Selected = playerCount === 2;
+  ctx.beginPath(); ctx.roundRect(CX - 130, 215, 120, 50, 8);
+  ctx.fillStyle = p2Selected ? '#3d2816' : '#1a1008'; ctx.fill();
+  ctx.strokeStyle = p2Selected ? '#6a4a30' : '#2a1a10'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = 'bold 18px monospace';
+  ctx.fillStyle = p2Selected ? '#c9a87a' : '#555';
+  ctx.fillText('2', CX - 70, 248);
+  
+  // 4 Player button
+  const p4Selected = playerCount === 4;
+  ctx.beginPath(); ctx.roundRect(CX + 10, 215, 120, 50, 8);
+  ctx.fillStyle = p4Selected ? '#3d2816' : '#1a1008'; ctx.fill();
+  ctx.strokeStyle = p4Selected ? '#6a4a30' : '#2a1a10'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = p4Selected ? '#c9a87a' : '#555';
+  ctx.fillText('4', CX + 70, 248);
+  
+  // Quick Play button
+  ctx.beginPath(); ctx.roundRect(CX - 140, 310, 280, 70, 12);
+  ctx.fillStyle = '#2a1a10'; ctx.fill();
+  ctx.strokeStyle = '#4a3520'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = 'bold 22px monospace'; ctx.fillStyle = '#c9a87a';
+  ctx.fillText('QUICK PLAY', CX, 353);
+  
+  // Custom Rules button
+  ctx.beginPath(); ctx.roundRect(CX - 140, 400, 280, 70, 12);
+  ctx.fillStyle = '#2a1a10'; ctx.fill();
+  ctx.strokeStyle = '#4a3520'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#c9a87a';
+  ctx.fillText('CUSTOM RULES', CX, 443);
+  
+  ctx.font = '12px monospace'; ctx.fillStyle = '#444';
+  ctx.fillText('v1.0 • Touch to Play', CX, 560);
+  
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.beginPath(); ctx.arc(CX, CY, 358, 0, PI2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawRules() {
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  ctx.beginPath(); ctx.arc(CX, CY, 340, 0, PI2);
+  const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, 340);
+  bg.addColorStop(0, '#1a1510'); bg.addColorStop(1, '#0a0805');
+  ctx.fillStyle = bg; ctx.fill();
+  ctx.beginPath(); ctx.arc(CX, CY, 338, 0, PI2);
+  ctx.strokeStyle = '#3d2a15'; ctx.lineWidth = 4; ctx.stroke();
+  
+  ctx.font = 'bold 24px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#d4a574'; ctx.fillText('GAME RULES', CX, 60);
+  
+  const startY = 90, rowH = 52;
+  ruleKeys.forEach((key, i) => {
+    const y = startY + i * rowH;
+    const isSelected = selectedRule === i;
+    
+    ctx.beginPath(); ctx.roundRect(70, y, 580, 46, 6);
+    ctx.fillStyle = isSelected ? '#2a1a10' : '#1a1008'; ctx.fill();
+    if (isSelected) { ctx.strokeStyle = '#6a4a30'; ctx.lineWidth = 2; ctx.stroke(); }
+    
+    ctx.font = '12px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#888'; ctx.fillText(ruleLabels[key], 85, y + 18);
+    
+    const opts = ruleOptions[key];
+    const valText = opts[rules[key]];
+    ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = isSelected ? '#c9a87a' : '#777';
+    ctx.fillText('◄  ' + valText + '  ►', CX + 120, y + 34);
+  });
+  
+  const btnText = is4Player() ? 'SET UP TEAMS' : 'START GAME';
+  ctx.beginPath(); ctx.roundRect(CX - 100, 570, 200, 50, 10);
+  ctx.fillStyle = '#3d2816'; ctx.fill();
+  ctx.strokeStyle = '#5a4025'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#c9a87a'; ctx.fillText(btnText, CX, 602);
+  
+  ctx.font = '10px monospace'; ctx.fillStyle = '#555';
+  ctx.fillText('Tap arrows to change', CX, 645);
+  
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.beginPath(); ctx.arc(CX, CY, 358, 0, PI2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawTeamSetup() {
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  ctx.beginPath(); ctx.arc(CX, CY, 340, 0, PI2);
+  const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, 340);
+  bg.addColorStop(0, '#1a1510'); bg.addColorStop(1, '#0a0805');
+  ctx.fillStyle = bg; ctx.fill();
+  ctx.beginPath(); ctx.arc(CX, CY, 338, 0, PI2);
+  ctx.strokeStyle = '#3d2a15'; ctx.lineWidth = 4; ctx.stroke();
+  
+  ctx.font = 'bold 24px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#d4a574'; ctx.fillText('TEAM SETUP', CX, 70);
+  
+  ctx.font = '12px monospace'; ctx.fillStyle = '#888';
+  ctx.fillText('Partners sit opposite each other', CX, 95);
+  ctx.fillText('Tap a player to change their team', CX, 112);
+  
+  // Draw board representation
+  ctx.beginPath(); ctx.arc(CX, CY, 130, 0, PI2);
+  ctx.fillStyle = '#2a1a10'; ctx.fill();
+  ctx.strokeStyle = '#4a3520'; ctx.lineWidth = 3; ctx.stroke();
+  
+  ctx.beginPath(); ctx.arc(CX, CY, 90, 0, PI2);
+  ctx.fillStyle = '#3d2816'; ctx.fill();
+  
+  // Player positions
+  const positions = [
+    { x: CX, y: CY + 200, label: 'P1' },
+    { x: CX + 200, y: CY, label: 'P2' },
+    { x: CX, y: CY - 200, label: 'P3' },
+    { x: CX - 200, y: CY, label: 'P4' }
+  ];
+  
+  // Draw partner connection lines first (behind circles)
+  ctx.lineWidth = 3;
+  for (let t = 0; t < 2; t++) {
+    const teamPlayers = [];
+    for (let i = 0; i < 4; i++) {
+      if (teamAssign[i] === t) teamPlayers.push(positions[i]);
+    }
+    if (teamPlayers.length === 2) {
+      ctx.strokeStyle = TEAM_COLORS[t];
+      ctx.globalAlpha = 0.4;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(teamPlayers[0].x, teamPlayers[0].y);
+      ctx.lineTo(teamPlayers[1].x, teamPlayers[1].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+  }
+  
+  // Draw player circles with team highlighting
+  positions.forEach((pos, i) => {
+    const team = teamAssign[i];
+    
+    // Outer glow/ring for team
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 44, 0, PI2);
+    ctx.fillStyle = TEAM_COLORS[team];
+    ctx.globalAlpha = 0.3;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    // Main circle with team color
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 36, 0, PI2);
+    ctx.fillStyle = TEAM_COLORS[team];
+    ctx.fill();
+    
+    // Inner circle (darker)
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 28, 0, PI2);
+    const inner = team === 0 ? '#cc4444' : '#2a9a92';
+    ctx.fillStyle = inner;
+    ctx.fill();
+    
+    // White border
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 36, 0, PI2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    
+    // Player label
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(pos.label, pos.x, pos.y + 7);
+  });
+  
+  // Team labels
+  ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'center';
+  
+  const team0Players = [], team1Players = [];
+  for (let i = 0; i < 4; i++) {
+    if (teamAssign[i] === 0) team0Players.push('P' + (i + 1));
+    else team1Players.push('P' + (i + 1));
+  }
+  
+  ctx.fillStyle = TEAM_COLORS[0];
+  ctx.fillText('TEAM ' + TEAM_NAMES[0] + ': ' + team0Players.join(' & '), CX, 520);
+  ctx.fillStyle = TEAM_COLORS[1];
+  ctx.fillText('TEAM ' + TEAM_NAMES[1] + ': ' + team1Players.join(' & '), CX, 545);
+  
+  const valid = team0Players.length === 2 && team1Players.length === 2;
+  
+  ctx.beginPath(); ctx.roundRect(CX - 100, 580, 200, 50, 10);
+  ctx.fillStyle = valid ? '#3d2816' : '#1a1008'; ctx.fill();
+  ctx.strokeStyle = valid ? '#5a4025' : '#2a1a10'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = 'bold 18px monospace';
+  ctx.fillStyle = valid ? '#c9a87a' : '#555';
+  ctx.fillText('START GAME', CX, 612);
+  
+  if (!valid) {
+    ctx.font = '11px monospace';
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillText('Each team needs 2 players', CX, 660);
+  }
+  
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.beginPath(); ctx.arc(CX, CY, 358, 0, PI2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawGame() {
+  ctx.drawImage(boardCanvas, 0, 0);
+  
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i]; if (p.sunk) continue;
+    const img = p.type === 0 ? pieceImages.queen : p.type === 1 ? pieceImages.white : pieceImages.black;
+    ctx.drawImage(img, p.x - PIECE_R - 2, p.y - PIECE_R - 2);
+  }
+  
+  if (striker.active) {
+    ctx.drawImage(pieceImages.striker[currentPlayer], striker.x - STRIKER_R - 2, striker.y - STRIKER_R - 2);
+  }
+  
+  if (phase === 0) drawSlider();
+  else if (phase === 1) drawAim();
+  
+  drawScores();
+  
+  if (msgTimer > 0) {
+    msgTimer--;
+    ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.fillText(message, CX, CY);
+  }
+  
+  if (gameOver && msgTimer < 50) {
+    ctx.font = '14px monospace'; ctx.fillStyle = '#666';
+    ctx.textAlign = 'center'; ctx.fillText('TAP TO MENU', CX, CY + 30);
+  }
+}
+
+function drawScores() {
+  ctx.textAlign = 'center';
+  
+  if (is4Player()) {
+    const myTeam = getPlayerTeam(currentPlayer);
+    
+    // Get players on each team
+    const team0Players = [], team1Players = [];
+    for (let i = 0; i < 4; i++) {
+      if (teamAssign[i] === 0) team0Players.push(i);
+      else team1Players.push(i);
+    }
+    
+    // Team 0 (RED) - bottom
+    ctx.font = 'bold 16px monospace';
+    ctx.fillStyle = myTeam === 0 && phase !== 2 ? TEAM_COLORS[0] : '#664444';
+    ctx.fillText(TEAM_NAMES[0] + ': ' + teamScores[0], CX - 50, CY + 325);
+    
+    // Piece color indicator
+    if (teamColors[0] !== 0) {
+      ctx.beginPath(); ctx.arc(CX + 10, CY + 321, 6, 0, PI2);
+      ctx.fillStyle = teamColors[0] === 1 ? '#fffef8' : '#2a2a2a'; ctx.fill();
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    
+    // Player indicators for team 0
+    team0Players.forEach((p, idx) => {
+      const px = CX + 50 + idx * 36;
+      const isCurrent = currentPlayer === p;
+      ctx.beginPath(); ctx.arc(px, CY + 321, isCurrent ? 14 : 11, 0, PI2);
+      ctx.fillStyle = TEAM_COLORS[0];
+      ctx.globalAlpha = isCurrent ? 1 : 0.4;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (isCurrent) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.font = isCurrent ? 'bold 10px monospace' : '9px monospace';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('P' + (p + 1), px, CY + 325);
+    });
+    
+    // Team 1 (CYAN) - top
+    ctx.font = 'bold 16px monospace';
+    ctx.fillStyle = myTeam === 1 && phase !== 2 ? TEAM_COLORS[1] : '#446666';
+    ctx.fillText(TEAM_NAMES[1] + ': ' + teamScores[1], CX - 50, CY - 310);
+    
+    // Piece color indicator
+    if (teamColors[1] !== 0) {
+      ctx.beginPath(); ctx.arc(CX + 10, CY - 314, 6, 0, PI2);
+      ctx.fillStyle = teamColors[1] === 1 ? '#fffef8' : '#2a2a2a'; ctx.fill();
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    
+    // Player indicators for team 1
+    team1Players.forEach((p, idx) => {
+      const px = CX + 50 + idx * 36;
+      const isCurrent = currentPlayer === p;
+      ctx.beginPath(); ctx.arc(px, CY - 314, isCurrent ? 14 : 11, 0, PI2);
+      ctx.fillStyle = TEAM_COLORS[1];
+      ctx.globalAlpha = isCurrent ? 1 : 0.4;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (isCurrent) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.font = isCurrent ? 'bold 10px monospace' : '9px monospace';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('P' + (p + 1), px, CY - 310);
+    });
+  } else {
+    ctx.font = 'bold 20px monospace';
+    const p1Active = currentPlayer === 0 && phase !== 2;
+    ctx.fillStyle = p1Active ? '#ff8080' : '#664444';
+    ctx.fillText('P1: ' + teamScores[0], CX, CY + 328);
+    if (teamColors[0] !== 0) {
+      ctx.beginPath(); ctx.arc(CX + 50, CY + 324, 6, 0, PI2);
+      ctx.fillStyle = teamColors[0] === 1 ? '#fffef8' : '#2a2a2a'; ctx.fill();
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    
+    const p2Active = currentPlayer === 1 && phase !== 2;
+    ctx.fillStyle = p2Active ? '#80d0cc' : '#446666';
+    ctx.fillText('P2: ' + teamScores[1], CX, CY - 318);
+    if (teamColors[1] !== 0) {
+      ctx.beginPath(); ctx.arc(CX + 50, CY - 322, 6, 0, PI2);
+      ctx.fillStyle = teamColors[1] === 1 ? '#fffef8' : '#2a2a2a'; ctx.fill();
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+  
+  const target = getWinTarget();
+  if (target > 0) {
+    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+    ctx.fillText('First to ' + target, CX, CY + 348);
+  }
+}
+
+function drawSlider() {
+  const zone = ZONES[currentPlayer];
+  const horizontal = zone.horizontal;
+  
+  let trackX, trackY, trackW, trackH, handleX, handleY;
+  
+  if (horizontal) {
+    trackX = CX - 110; trackY = zone.y + (currentPlayer === 0 ? 45 : -53);
+    trackW = 220; trackH = 36;
+    handleX = trackX + sliderPos * trackW; handleY = trackY + 18;
+  } else {
+    trackX = zone.x + (currentPlayer === 1 ? 45 : -53) - 18; trackY = CY - 110;
+    trackW = 36; trackH = 220;
+    handleX = trackX + 18; handleY = trackY + sliderPos * trackH;
+  }
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(trackX - 6, trackY - 6, trackW + 12, trackH + 12, 18); ctx.fill();
+  
+  if (horizontal) {
+    ctx.fillStyle = '#222'; ctx.fillRect(trackX, trackY + 15, trackW, 6);
+  } else {
+    ctx.fillStyle = '#222'; ctx.fillRect(trackX + 15, trackY, 6, trackH);
+  }
+  
+  ctx.beginPath(); ctx.arc(handleX, handleY, 16, 0, PI2);
+  ctx.fillStyle = TEAM_COLORS[getPlayerTeam(currentPlayer)]; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  
+  ctx.font = '10px monospace'; ctx.fillStyle = '#777'; ctx.textAlign = 'center';
+  ctx.fillText('SLIDE • TAP STRIKER TO AIM', CX, CY);
+}
+
+function drawAim() {
+  const dx = aimStartX - aimCurX, dy = aimStartY - aimCurY;
+  const power = Math.min(Math.sqrt(dx * dx + dy * dy), 140);
+  const ang = Math.atan2(dy, dx);
+  
+  let validShot = true;
+  if (rules.backwards === 1) {
+    const dir = getShootDirection();
+    const shotX = Math.cos(ang), shotY = Math.sin(ang);
+    if (dir.x * shotX + dir.y * shotY < 0) validShot = false;
+  }
+  
+  ctx.strokeStyle = validShot ? TEAM_COLORS[getPlayerTeam(currentPlayer)] : 'rgba(255,50,50,0.5)';
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+  ctx.beginPath(); ctx.moveTo(striker.x, striker.y);
+  ctx.lineTo(striker.x + Math.cos(ang) * 130, striker.y + Math.sin(ang) * 130);
+  ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  
+  if (!validShot) {
+    ctx.font = '12px monospace'; ctx.fillStyle = '#ff5555';
+    ctx.textAlign = 'center'; ctx.fillText('NO BACKWARD SHOTS', CX, CY);
+  }
+  
+  const zone = ZONES[currentPlayer];
+  let barX, barY;
+  if (zone.horizontal) {
+    barX = CX - 70; barY = zone.y + (currentPlayer === 0 ? 90 : -98);
+  } else {
+    barX = zone.x + (currentPlayer === 1 ? 50 : -190); barY = CY - 5;
+  }
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(barX - 3, barY - 3, 146, 16);
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(barX, barY, 140, 10);
+  const pct = power / 140;
+  ctx.fillStyle = pct < 0.5 ? '#4ecdc4' : pct < 0.8 ? '#ddc060' : '#ff6b6b';
+  ctx.fillRect(barX, barY, 140 * pct, 10);
+}
+
+function draw() {
+  if (gameState === 'menu') drawMenu();
+  else if (gameState === 'rules') drawRules();
+  else if (gameState === 'teams') drawTeamSetup();
+  else drawGame();
+}
+
+// ========== INPUT ==========
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  let cx, cy;
+  if (e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+  else if (e.changedTouches && e.changedTouches.length > 0) { cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY; }
+  else { cx = e.clientX; cy = e.clientY; }
+  return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
+}
+
+function handleMenuInput(pos) {
+  // Player count buttons
+  if (pos.y >= 215 && pos.y <= 265) {
+    if (pos.x >= CX - 130 && pos.x <= CX - 10) {
+      playerCount = 2;
+      playClick();
+      return;
+    }
+    if (pos.x >= CX + 10 && pos.x <= CX + 130) {
+      playerCount = 4;
+      playClick();
+      return;
+    }
+  }
+  
+  // Quick Play
+  if (pos.y >= 310 && pos.y <= 380 && pos.x >= CX - 140 && pos.x <= CX + 140) {
+    playClick();
+    Object.keys(rules).forEach(k => rules[k] = 0);
+    teamAssign = [0, 1, 0, 1];
+    if (playerCount === 4) {
+      gameState = 'teams';
+    } else {
+      initGame();
+    }
+    return;
+  }
+  
+  // Custom Rules
+  if (pos.y >= 400 && pos.y <= 470 && pos.x >= CX - 140 && pos.x <= CX + 140) {
+    playClick();
+    gameState = 'rules';
+    selectedRule = 0;
+  }
+}
+
+function handleRulesInput(pos) {
+  const startY = 90, rowH = 52;
+  
+  for (let i = 0; i < ruleKeys.length; i++) {
+    const y = startY + i * rowH;
+    if (pos.y >= y && pos.y <= y + 46 && pos.x >= 70 && pos.x <= 650) {
+      selectedRule = i;
+      const key = ruleKeys[i];
+      const maxVal = ruleOptions[key].length - 1;
+      
+      if (pos.x > CX + 50) {
+        rules[key] = (rules[key] + 1) % (maxVal + 1);
+        playClick();
+      } else if (pos.x < CX - 20) {
+        rules[key] = (rules[key] - 1 + maxVal + 1) % (maxVal + 1);
+        playClick();
+      }
+      return;
+    }
+  }
+  
+  if (pos.y >= 570 && pos.y <= 620 && pos.x >= CX - 100 && pos.x <= CX + 100) {
+    playClick();
+    if (is4Player()) {
+      gameState = 'teams';
+    } else {
+      initGame();
+    }
+  }
+}
+
+function handleTeamsInput(pos) {
+  const positions = [
+    { x: CX, y: CY + 200 },
+    { x: CX + 200, y: CY },
+    { x: CX, y: CY - 200 },
+    { x: CX - 200, y: CY }
+  ];
+  
+  for (let i = 0; i < 4; i++) {
+    if (distSq(pos.x, pos.y, positions[i].x, positions[i].y) < 50 * 50) {
+      teamAssign[i] = 1 - teamAssign[i];
+      playClick();
+      return;
+    }
+  }
+  
+  const team0Count = teamAssign.filter(t => t === 0).length;
+  if (team0Count === 2 && pos.y >= 580 && pos.y <= 630 && pos.x >= CX - 100 && pos.x <= CX + 100) {
+    playClick();
+    initGame();
+  }
+}
+
+function handleGameInput(pos, isStart) {
+  if (gameOver) {
+    if (!isStart) gameState = 'menu';
+    return;
+  }
+  if (phase === 2) return;
+  
+  const zone = ZONES[currentPlayer];
+  let sliderHit = false;
+  
+  if (zone.horizontal) {
+    const sliderY = zone.y + (currentPlayer === 0 ? 45 + 18 : -53 + 18);
+    if (Math.abs(pos.y - sliderY) < 30 && pos.x >= CX - 130 && pos.x <= CX + 130) {
+      sliderHit = true;
+      sliderPos = Math.max(0, Math.min(1, (pos.x - (CX - 110)) / 220));
+    }
+  } else {
+    const sliderX = zone.x + (currentPlayer === 1 ? 45 : -53);
+    if (Math.abs(pos.x - sliderX) < 30 && pos.y >= CY - 130 && pos.y <= CY + 130) {
+      sliderHit = true;
+      sliderPos = Math.max(0, Math.min(1, (pos.y - (CY - 110)) / 220));
+    }
+  }
+  
+  if (isStart) {
+    if (phase === 0) {
+      if (sliderHit) {
+        dragMode = 1;
+        const p = getStrikerPosition();
+        striker.x = p.x; striker.y = p.y;
+        return;
+      }
+      if (distSq(pos.x, pos.y, striker.x, striker.y) < (STRIKER_R + 35) * (STRIKER_R + 35)) {
+        phase = 1;
+        aimStartX = striker.x; aimStartY = striker.y;
+        aimCurX = pos.x; aimCurY = pos.y;
+        dragMode = 2;
+        resetTurnTracking();
+        return;
+      }
+    }
+    if (phase === 1) {
+      aimStartX = striker.x; aimStartY = striker.y;
+      aimCurX = pos.x; aimCurY = pos.y;
+      dragMode = 2;
+    }
+  }
+}
+
+function onStart(e) {
+  e.preventDefault(); initAudio();
+  const pos = getPos(e);
+  if (gameState === 'menu') handleMenuInput(pos);
+  else if (gameState === 'rules') handleRulesInput(pos);
+  else if (gameState === 'teams') handleTeamsInput(pos);
+  else handleGameInput(pos, true);
+}
+
+function onMove(e) {
+  e.preventDefault();
+  if (gameState !== 'play') return;
+  const pos = getPos(e);
+  
+  if (dragMode === 1) {
+    const zone = ZONES[currentPlayer];
+    if (zone.horizontal) {
+      sliderPos = Math.max(0, Math.min(1, (pos.x - (CX - 110)) / 220));
+    } else {
+      sliderPos = Math.max(0, Math.min(1, (pos.y - (CY - 110)) / 220));
+    }
+    const p = getStrikerPosition();
+    striker.x = p.x; striker.y = p.y;
+  } else if (dragMode === 2) {
+    aimCurX = pos.x; aimCurY = pos.y;
+  }
+}
+
+function onEnd(e) {
+  e.preventDefault();
+  
+  if (gameState === 'play' && dragMode === 2 && phase === 1) {
+    const dx = aimStartX - aimCurX, dy = aimStartY - aimCurY;
+    const power = Math.min(Math.sqrt(dx * dx + dy * dy), 140);
+    const ang = Math.atan2(dy, dx);
+    
+    let validShot = true;
+    if (rules.backwards === 1) {
+      const dir = getShootDirection();
+      const shotX = Math.cos(ang), shotY = Math.sin(ang);
+      if (dir.x * shotX + dir.y * shotY < 0) validShot = false;
+    }
+    
+    if (power > 18 && validShot) {
+      const force = (power / 140) * MAX_POWER;
+      striker.vx = Math.cos(ang) * force;
+      striker.vy = Math.sin(ang) * force;
+      phase = 2;
+      playShoot(power / 140);
+    } else {
+      phase = 0;
+    }
+  }
+  
+  dragMode = 0;
+  
+  if (gameState === 'play') {
+    const pos = getPos(e);
+    handleGameInput(pos, false);
+  }
+}
+
+canvas.addEventListener('touchstart', onStart, { passive: false });
+canvas.addEventListener('touchmove', onMove, { passive: false });
+canvas.addEventListener('touchend', onEnd, { passive: false });
+canvas.addEventListener('touchcancel', onEnd, { passive: false });
+canvas.addEventListener('mousedown', onStart);
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('mouseup', onEnd);
+canvas.addEventListener('mouseleave', onEnd);
+
+function loop() {
+  if (gameState === 'play') physics();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+initPieceImages();
+renderBoard();
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SIGIL LITE</title>
+    <style>
+        :root { --game-scale: 0.92; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden; background: #000;
+            display: flex; align-items: center; justify-content: center;
+            touch-action: none; -webkit-user-select: none; user-select: none;
+            font-family: 'Courier New', monospace;
+        }
+        #gameContainer {
+            position: relative;
+            width: min(100vw, 100vh); height: min(100vw, 100vh);
+            max-width: 720px; max-height: 720px;
+            transform: scale(var(--game-scale));
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100; background: rgba(6, 6, 10, 0.97);
+        }
+        .overlay.hidden { display: none; }
+        .title {
+            font-size: min(12vw, 80px); font-weight: bold; letter-spacing: 0.4em;
+            color: #d4d0c4; text-shadow: 0 0 40px rgba(212, 208, 196, 0.3);
+            margin-bottom: 3%;
+        }
+        .subtitle { font-size: min(2vw, 14px); letter-spacing: 0.3em; color: #6a5c8a; margin-bottom: 6%; }
+        .startBtn {
+            padding: 2% 6%; font-size: min(2.5vw, 18px); letter-spacing: 0.2em;
+            background: transparent; border: 1px solid #d4d0c4; color: #d4d0c4;
+            cursor: pointer; transition: all 0.3s; margin-top: 3%;
+        }
+        .startBtn:hover { background: rgba(212, 208, 196, 0.1); }
+        .energyHud {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 6px; align-items: center; z-index: 50;
+            padding: 4px 12px;
+            background: rgba(6, 6, 10, 0.7);
+            border-radius: 20px;
+        }
+        .energyHud.top { top: 12%; }
+        .energyHud.bottom { bottom: 12%; }
+        .energyHud .label { font-size: min(1.8vw, 12px); letter-spacing: 0.15em; margin-right: 8px; }
+        .energyHud.p1 .label { color: #e85a3c; }
+        .energyHud.p2 .label { color: #3c8ee8; }
+        .energyHud .pip {
+            width: min(2.2vw, 14px); height: min(2.2vw, 14px);
+            border-radius: 50%; border: 1px solid;
+        }
+        .energyHud.p1 .pip { border-color: #e85a3c; }
+        .energyHud.p2 .pip { border-color: #3c8ee8; }
+        .energyHud.p1 .pip.full { background: #e85a3c; box-shadow: 0 0 8px rgba(232, 90, 60, 0.6); }
+        .energyHud.p2 .pip.full { background: #3c8ee8; box-shadow: 0 0 8px rgba(60, 142, 232, 0.6); }
+        #lifeP1, #lifeP2 {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            font-size: min(2vw, 14px); letter-spacing: 0.1em; z-index: 50;
+        }
+        #lifeP1 { top: 17%; color: #e85a3c; }
+        #lifeP2 { bottom: 17%; color: #3c8ee8; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="mainCanvas"></canvas>
+        
+        <div id="energyTop" class="energyHud top p1"></div>
+        <div id="energyBottom" class="energyHud bottom p2"></div>
+        <div id="lifeP1">100</div>
+        <div id="lifeP2">100</div>
+        
+        <div id="startOverlay" class="overlay">
+            <div class="title">SIGIL</div>
+            <div class="subtitle">A CIRCULAR DUEL</div>
+            <button class="startBtn" id="startBtn">BEGIN</button>
+        </div>
+        
+        <div id="endOverlay" class="overlay hidden">
+            <div class="title" id="winnerText">VICTORY</div>
+            <div class="subtitle" id="winnerSub"></div>
+            <button class="startBtn" id="restartBtn">AGAIN</button>
+        </div>
+    </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// SIGIL LITE - Optimized for low-power devices
+// ═══════════════════════════════════════════════════════════════════
+const SIZE = 720;
+const CENTER = SIZE / 2;
+const R = { eye: 40, inner: 95, ring: 155, ringW: 24, spell: 225, cast: 275, life: 330, lifeW: 12, outer: 355 };
+
+const COL = {
+    bg: '#06060a',
+    p1: { pri: '#e85a3c', sec: '#ff9872', glow: 'rgba(232, 90, 60, 0.6)', dim: 'rgba(232, 90, 60, 0.12)', name: 'EMBER' },
+    p2: { pri: '#3c8ee8', sec: '#72b8ff', glow: 'rgba(60, 142, 232, 0.6)', dim: 'rgba(60, 142, 232, 0.12)', name: 'FROST' },
+    energy: '#d4d0c4',
+    glow: 'rgba(212, 208, 196, 0.8)',
+    ring: '#2a2a32',
+    rune: '#6a5c8a'
+};
+
+const SPELLS = [
+    { id: 'bolt', name: 'BOLT', cost: 1, type: 'projectile', speed: 9, damage: 12 },
+    { id: 'lance', name: 'LANCE', cost: 2, type: 'projectile', speed: 5, damage: 25 },
+    { id: 'ward', name: 'WARD', cost: 2, type: 'ward', duration: 3 },
+    { id: 'siphon', name: 'SIPHON', cost: 1, type: 'beam', steal: 2 }
+];
+
+// Orb colors
+const ORB_COLORS = [
+    { core: '#fff8e0', mid: '#ffd700', outer: '#ff8c00', glow: 'rgba(255, 215, 0, 0.6)' },
+    { core: '#e0fff8', mid: '#00ffd0', outer: '#00a080', glow: 'rgba(0, 255, 208, 0.6)' },
+    { core: '#ffe0f8', mid: '#ff00d0', outer: '#a00080', glow: 'rgba(255, 0, 208, 0.6)' },
+    { core: '#e0e8ff', mid: '#6080ff', outer: '#3040a0', glow: 'rgba(96, 128, 255, 0.6)' },
+    { core: '#fff0e0', mid: '#ff8040', outer: '#c04020', glow: 'rgba(255, 128, 64, 0.6)' },
+    { core: '#e0ffe0', mid: '#40ff40', outer: '#20a020', glow: 'rgba(64, 255, 64, 0.6)' },
+    { core: '#ffe0e0', mid: '#ff4040', outer: '#a02020', glow: 'rgba(255, 64, 64, 0.6)' },
+    { core: '#f0e0ff', mid: '#a040ff', outer: '#6020a0', glow: 'rgba(160, 64, 255, 0.6)' },
+];
+
+// Memory limits
+const MAX_PARTICLES = 50;
+const MAX_ORBS = 5;
+const MAX_PROJECTILES = 20;
+const MAX_BEAMS = 10;
+
+const state = {
+    running: false, time: 0,
+    players: [
+        { id: 0, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 1.5, barriers: [], flash: 0 },
+        { id: 1, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 0.5, barriers: [], flash: 0 }
+    ],
+    ring: { angle: 0, target: 0, walls: [{ s: -0.3, e: 0.3 }, { s: Math.PI - 0.3, e: Math.PI + 0.3 }] },
+    orbs: [], projectiles: [], beams: [], particles: [],
+    pointers: new Map(), // Multi-touch: touchId -> pointer data
+    runes: [], arcs: []
+};
+
+// Legacy single pointer for rendering compatibility
+Object.defineProperty(state, 'pointer', {
+    get() { return state.pointers.size > 0 ? state.pointers.values().next().value : null; }
+});
+
+// HUD cache to avoid rebuilding every frame
+const hudCache = { p0Energy: -1, p1Energy: -1, p0Hp: -1, p1Hp: -1 };
+
+const bgCanvas = document.getElementById('bgCanvas');
+const mainCanvas = document.getElementById('mainCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+const ctx = mainCanvas.getContext('2d');
+bgCanvas.width = mainCanvas.width = SIZE;
+bgCanvas.height = mainCanvas.height = SIZE;
+
+// ═══════════════════════════════════════════════════════════════════
+// SIGIL DRAWING
+// ═══════════════════════════════════════════════════════════════════
+function drawSigil(ctx, type, x, y, size, color, alpha = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = size * 0.06;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const s = size * 0.4;
+    
+    switch(type) {
+        case 'bolt': // Three converging lines with central point
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+                const a = i * Math.PI * 2 / 3 - Math.PI / 2;
+                ctx.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+                ctx.lineTo(Math.cos(a + Math.PI) * s * 0.3, Math.sin(a + Math.PI) * s * 0.3);
+            }
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+            
+        case 'lance': // Heavy geometric - square with diagonals and circle
+            ctx.beginPath();
+            ctx.rect(-s * 0.7, -s * 0.7, s * 1.4, s * 1.4);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-s * 0.7, -s * 0.7); ctx.lineTo(s * 0.7, s * 0.7);
+            ctx.moveTo(s * 0.7, -s * 0.7); ctx.lineTo(-s * 0.7, s * 0.7);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2);
+            ctx.stroke();
+            break;
+            
+        case 'ward': // Protective - nested arcs with cross
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.9, Math.PI * 0.2, Math.PI * 0.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.9, Math.PI * 1.2, Math.PI * 1.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, s * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -s * 0.35); ctx.lineTo(0, s * 0.35);
+            ctx.moveTo(-s * 0.35, 0); ctx.lineTo(s * 0.35, 0);
+            ctx.stroke();
+            break;
+            
+        case 'siphon': // Spiral with radiating dots
+            ctx.beginPath();
+            for (let i = 0; i < 40; i++) {
+                const t = i / 40;
+                const a = t * Math.PI * 3;
+                const r = s * 0.2 + t * s * 0.6;
+                if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+                else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            }
+            ctx.stroke();
+            for (let i = 0; i < 6; i++) {
+                const a = i * Math.PI / 3;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * s * 0.85, Math.sin(a) * s * 0.85, s * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            break;
+    }
+    ctx.restore();
+}
+
+function drawRune(ctx, seed, x, y, size, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(seed * Math.PI * 2);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = COL.rune;
+    ctx.lineWidth = 1;
+    
+    const type = Math.floor(seed * 5);
+    const s = size * 0.4;
+    
+    ctx.beginPath();
+    if (type === 0) {
+        ctx.arc(0, 0, s, 0, Math.PI * 2);
+        ctx.moveTo(-s * 0.5, -s * 0.5); ctx.lineTo(s * 0.5, s * 0.5);
+        ctx.moveTo(s * 0.5, -s * 0.5); ctx.lineTo(-s * 0.5, s * 0.5);
+    } else if (type === 1) {
+        ctx.moveTo(0, -s); ctx.lineTo(s * 0.866, s * 0.5); ctx.lineTo(-s * 0.866, s * 0.5); ctx.closePath();
+    } else if (type === 2) {
+        ctx.rect(-s * 0.7, -s * 0.7, s * 1.4, s * 1.4);
+        ctx.moveTo(0, -s * 0.7); ctx.lineTo(0, s * 0.7);
+    } else if (type === 3) {
+        ctx.arc(0, 0, s, 0, Math.PI); ctx.arc(s * 0.3, 0, s * 0.7, Math.PI, 0, true);
+    } else {
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            if (i === 0) ctx.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+            else ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+        }
+        ctx.closePath();
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+function ang(x, y) { return Math.atan2(y - CENTER, x - CENTER); }
+function normAng(a) { while(a < 0) a += Math.PI*2; while(a >= Math.PI*2) a -= Math.PI*2; return a; }
+function angDiff(a1, a2) { let d = normAng(a2-a1); if(d > Math.PI) d -= Math.PI*2; return d; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function inZone(x, y, pid) { return Math.abs(angDiff(ang(x,y), state.players[pid].angle)) < Math.PI/2; }
+
+function getPlayer(x, y) {
+    const d = dist(x, y, CENTER, CENTER);
+    if (d < R.inner || d > R.outer) return -1;
+    return inZone(x, y, 0) ? 0 : 1;
+}
+
+function getSpellBtns(pid) {
+    const p = state.players[pid];
+    const btns = [];
+    SPELLS.forEach((spell, i) => {
+        const offset = (i - 1.5) * 0.35;
+        const a = p.angle + offset;
+        btns.push({ x: CENTER + Math.cos(a) * R.spell, y: CENTER + Math.sin(a) * R.spell, a, spell, r: 26 });
+    });
+    return btns;
+}
+
+function getBtnAt(x, y, pid) {
+    const btns = getSpellBtns(pid);
+    for (const btn of btns) {
+        if (dist(x, y, btn.x, btn.y) < btn.r + 10) return btn;
+    }
+    return null;
+}
+
+function inRing(x, y) {
+    const d = dist(x, y, CENTER, CENTER);
+    return d > R.ring - R.ringW && d < R.ring + R.ringW;
+}
+
+function generateBarriers(pid) {
+    const p = state.players[pid];
+    p.barriers = [];
+    const numBarriers = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < numBarriers; i++) {
+        const angOffset = (Math.random() - 0.5) * Math.PI * 0.7;
+        const radius = R.cast + 30 + Math.random() * (R.life - R.cast - 60);
+        p.barriers.push({
+            ang: p.angle + angOffset,
+            radius, size: 0.12 + Math.random() * 0.08,
+            hp: 2, maxHp: 2, flash: 0, seed: Math.random()
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BACKGROUND
+// ═══════════════════════════════════════════════════════════════════
+function genBackground() {
+    state.runes = [];
+    for (let i = 0; i < 8; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = R.inner + 20 + Math.random() * (R.outer - R.inner - 40);
+        state.runes.push({
+            x: CENTER + Math.cos(a) * r, y: CENTER + Math.sin(a) * r,
+            seed: Math.random(), size: 10 + Math.random() * 14,
+            alpha: 0.03 + Math.random() * 0.04, phase: Math.random() * Math.PI * 2
+        });
+    }
+    drawBackground();
+}
+
+function drawBackground() {
+    const c = bgCtx;
+    const bg = c.createRadialGradient(CENTER, CENTER, 0, CENTER, CENTER, R.outer);
+    bg.addColorStop(0, '#0a0a10');
+    bg.addColorStop(0.6, '#06060a');
+    bg.addColorStop(1, '#030306');
+    c.fillStyle = bg;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.fill();
+    
+    // Concentric rings
+    c.strokeStyle = 'rgba(100, 80, 140, 0.06)';
+    c.lineWidth = 1;
+    for (let r = 50; r < R.outer; r += 40) {
+        c.beginPath(); c.arc(CENTER, CENTER, r, 0, Math.PI * 2); c.stroke();
+    }
+    
+    // Structure rings
+    [R.eye, R.inner, R.ring, R.cast, R.life].forEach(r => {
+        c.beginPath(); c.arc(CENTER, CENTER, r, 0, Math.PI * 2); c.stroke();
+    });
+    
+    // Radial lines
+    c.strokeStyle = 'rgba(100, 80, 140, 0.04)';
+    for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        c.beginPath();
+        c.moveTo(CENTER + Math.cos(a) * R.eye, CENTER + Math.sin(a) * R.eye);
+        c.lineTo(CENTER + Math.cos(a) * R.outer, CENTER + Math.sin(a) * R.outer);
+        c.stroke();
+    }
+    
+    // Zone colors
+    const g1 = c.createLinearGradient(CENTER, 0, CENTER, SIZE);
+    g1.addColorStop(0, COL.p1.dim);
+    g1.addColorStop(0.5, 'transparent');
+    c.fillStyle = g1;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, Math.PI, Math.PI * 2);
+    c.fill();
+    
+    const g2 = c.createLinearGradient(CENTER, 0, CENTER, SIZE);
+    g2.addColorStop(0.5, 'transparent');
+    g2.addColorStop(1, COL.p2.dim);
+    c.fillStyle = g2;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI);
+    c.fill();
+    
+    // Clip to circle
+    c.globalCompositeOperation = 'destination-in';
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPELLS
+// ═══════════════════════════════════════════════════════════════════
+function cast(pid, spellId, aimAng, sx, sy, endX, endY) {
+    const p = state.players[pid];
+    const spell = SPELLS.find(s => s.id === spellId);
+    if (!spell || p.energy < spell.cost) return false;
+    
+    p.energy -= spell.cost;
+    const col = pid === 0 ? COL.p1 : COL.p2;
+    
+    // Cast particles
+    for (let i = 0; i < 10; i++) {
+        const a = aimAng + (Math.random() - 0.5) * 0.6;
+        const v = 2 + Math.random() * 4;
+        state.particles.push({ x: sx, y: sy, vx: Math.cos(a)*v, vy: Math.sin(a)*v, life: 0.4, col: col.pri, size: 2 + Math.random() });
+    }
+    
+    switch(spell.type) {
+        case 'projectile':
+            state.projectiles.push({
+                x: sx, y: sy, ang: aimAng, speed: spell.speed, dmg: spell.damage,
+                pid, heavy: spellId === 'lance', trail: [], life: 1
+            });
+            break;
+            
+        case 'ward':
+            let wardAng = aimAng;
+            const maxDeviation = Math.PI * 0.45;
+            const deviation = angDiff(p.angle, wardAng);
+            if (Math.abs(deviation) > maxDeviation) {
+                wardAng = p.angle + Math.sign(deviation) * maxDeviation;
+            }
+            
+            const minR = R.cast + 15, maxR = R.life - 20;
+            const endDist = dist(endX, endY, CENTER, CENTER);
+            let wardRadius = Math.max(minR, Math.min(maxR, endDist));
+            
+            p.barriers.push({
+                ang: wardAng, radius: wardRadius,
+                size: 0.16 + Math.random() * 0.06,
+                hp: 2, maxHp: 2, flash: 1, seed: Math.random()
+            });
+            
+            // Ward creation particles
+            const wx = CENTER + Math.cos(wardAng) * wardRadius;
+            const wy = CENTER + Math.sin(wardAng) * wardRadius;
+            for (let i = 0; i < 12; i++) {
+                const pa = wardAng + (Math.random() - 0.5) * 0.4;
+                const pr = wardRadius + (Math.random() - 0.5) * 20;
+                const px = CENTER + Math.cos(pa) * pr;
+                const py = CENTER + Math.sin(pa) * pr;
+                state.particles.push({ x: px, y: py, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 0.5, col: col.sec, size: 3 });
+            }
+            break;
+            
+        case 'beam':
+            const length = R.outer;
+            let hitX = sx + Math.cos(aimAng) * length;
+            let hitY = sy + Math.sin(aimAng) * length;
+            let hitTarget = false;
+            let drainTarget = null;
+            
+            // Check for hits
+            for (let d = 0; d < length; d += 5) {
+                const bx = sx + Math.cos(aimAng) * d;
+                const by = sy + Math.sin(aimAng) * d;
+                const bd = dist(bx, by, CENTER, CENTER);
+                
+                if (bd > R.cast && bd < R.life + 20 && inZone(bx, by, 1-pid)) {
+                    const opp = state.players[1-pid];
+                    for (const bar of opp.barriers) {
+                        if (bar.hp <= 0) continue;
+                        const barDist = Math.abs(bd - bar.radius);
+                        const barAngDiff = Math.abs(angDiff(ang(bx, by), bar.ang));
+                        if (barDist < 15 && barAngDiff < bar.size + 0.05) {
+                            hitX = bx; hitY = by;
+                            bar.hp -= 1; bar.flash = 1;
+                            hitTarget = true;
+                            // Hit particles
+                            for (let j = 0; j < 8; j++) {
+                                const a = Math.random() * Math.PI * 2;
+                                state.particles.push({ x: bx, y: by, vx: Math.cos(a)*4, vy: Math.sin(a)*4, life: 0.4, col: COL.energy, size: 2 });
+                            }
+                            break;
+                        }
+                    }
+                    if (hitTarget) break;
+                    
+                    if (bd > R.life - R.lifeW && bd < R.life + R.lifeW) {
+                        hitX = bx; hitY = by;
+                        opp.hp -= spell.steal;
+                        opp.flash = 1;
+                        p.energy = Math.min(p.maxEnergy, p.energy + spell.steal);
+                        drainTarget = 1 - pid;
+                        hitTarget = true;
+                        
+                        // Drain particles
+                        for (let j = 0; j < 12; j++) {
+                            const a = Math.random() * Math.PI * 2;
+                            state.particles.push({ x: bx, y: by, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.4, col: COL.energy, size: 3 });
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            state.beams.push({
+                sx, sy, ex: hitX, ey: hitY,
+                pid, life: 0.5, col: col.pri,
+                drain: drainTarget !== null,
+                fromCol: drainTarget !== null ? 1 - pid : pid,
+                toCol: pid
+            });
+            break;
+    }
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ORB COLLECTION
+// ═══════════════════════════════════════════════════════════════════
+function collectOrbs(x, y, pid) {
+    const p = state.players[pid];
+    const col = pid === 0 ? COL.p1 : COL.p2;
+    const toCollect = [];
+    const checked = new Set();
+    
+    function chain(orb) {
+        if (checked.has(orb) || orb.dead) return;
+        if (!inZone(orb.x, orb.y, pid)) return;
+        checked.add(orb);
+        
+        const d = dist(x, y, orb.x, orb.y);
+        if (d > 50) return;
+        
+        toCollect.push(orb);
+        state.orbs.forEach(other => {
+            if (!checked.has(other) && !other.dead && dist(orb.x, orb.y, other.x, other.y) < 80) {
+                chain(other);
+            }
+        });
+    }
+    
+    state.orbs.forEach(o => {
+        if (!o.dead && inZone(o.x, o.y, pid) && dist(x, y, o.x, o.y) < 40) {
+            chain(o);
+        }
+    });
+    
+    toCollect.forEach((o, i) => {
+        setTimeout(() => {
+            if (o.dead) return;
+            o.dead = true;
+            p.energy = Math.min(p.maxEnergy, p.energy + 1);
+            for (let j = 0; j < 6; j++) {
+                const a = Math.random() * Math.PI * 2;
+                state.particles.push({ x: o.x, y: o.y, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.3, col: o.color.mid, size: 2 });
+            }
+        }, i * 60);
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INPUT - Multi-touch support for two players
+// ═══════════════════════════════════════════════════════════════════
+function getCoords(touch) {
+    const rect = mainCanvas.getBoundingClientRect();
+    return { x: (touch.clientX - rect.left) / rect.width * SIZE, y: (touch.clientY - rect.top) / rect.height * SIZE };
+}
+
+function onStart(touchId, x, y) {
+    if (!state.running) return;
+    const pid = getPlayer(x, y);
+    if (pid < 0) return;
+
+    collectOrbs(x, y, pid);
+
+    if (inRing(x, y)) {
+        state.pointers.set(touchId, { type: 'ring', startAng: state.ring.angle, touchAng: ang(x, y) });
+        return;
+    }
+
+    const btn = getBtnAt(x, y, pid);
+    if (btn && state.players[pid].energy >= btn.spell.cost) {
+        state.pointers.set(touchId, { type: 'spell', pid, spell: btn.spell, sx: btn.x, sy: btn.y, x, y });
+    }
+}
+
+function onMove(touchId, x, y) {
+    const ptr = state.pointers.get(touchId);
+    if (!ptr) return;
+
+    if (ptr.type === 'ring') {
+        state.ring.target = ptr.startAng + (ang(x, y) - ptr.touchAng);
+    } else if (ptr.type === 'spell') {
+        ptr.x = x; ptr.y = y;
+    }
+}
+
+function onEnd(touchId, x, y) {
+    const ptr = state.pointers.get(touchId);
+    if (!ptr) return;
+
+    if (ptr.type === 'spell') {
+        const dx = x - ptr.sx, dy = y - ptr.sy;
+        const dragDist = Math.sqrt(dx*dx + dy*dy);
+        if (dragDist > 20) {
+            cast(ptr.pid, ptr.spell.id, Math.atan2(dy, dx), ptr.sx, ptr.sy, x, y);
+        }
+    }
+    state.pointers.delete(touchId);
+}
+
+// Mouse events (single pointer with ID 'mouse')
+mainCanvas.addEventListener('mousedown', e => { const c = getCoords(e); onStart('mouse', c.x, c.y); });
+mainCanvas.addEventListener('mousemove', e => { const c = getCoords(e); onMove('mouse', c.x, c.y); });
+mainCanvas.addEventListener('mouseup', e => { const c = getCoords(e); onEnd('mouse', c.x, c.y); });
+
+// Touch events - handle all touches for multi-touch support
+mainCanvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+        const c = getCoords(touch);
+        onStart(touch.identifier, c.x, c.y);
+    }
+}, { passive: false });
+
+mainCanvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+        const c = getCoords(touch);
+        onMove(touch.identifier, c.x, c.y);
+    }
+}, { passive: false });
+
+mainCanvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+        const c = getCoords(touch);
+        onEnd(touch.identifier, c.x, c.y);
+    }
+}, { passive: false });
+
+mainCanvas.addEventListener('touchcancel', e => {
+    for (const touch of e.changedTouches) {
+        state.pointers.delete(touch.identifier);
+    }
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════════════════
+// SPAWNING
+// ═══════════════════════════════════════════════════════════════════
+function spawnOrb() {
+    const a = Math.random() * Math.PI * 2;
+    const color = ORB_COLORS[Math.floor(Math.random() * ORB_COLORS.length)];
+    state.orbs.push({
+        x: CENTER + Math.cos(a) * R.eye,
+        y: CENTER + Math.sin(a) * R.eye,
+        a, r: R.eye, va: (Math.random() - 0.5) * 0.3,
+        vr: 15 + Math.random() * 10,
+        phase: Math.random() * Math.PI * 2,
+        life: 1, dead: false, color
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// UPDATE
+// ═══════════════════════════════════════════════════════════════════
+function update(dt) {
+    state.time += dt;
+    
+    // Ring rotation
+    state.ring.angle += angDiff(state.ring.angle, state.ring.target) * 0.1;
+    
+    // Players
+    state.players.forEach(p => {
+        if (p.flash > 0) p.flash -= dt * 3;
+        p.barriers.forEach(b => { if (b.flash > 0) b.flash -= dt * 3; });
+        p.barriers = p.barriers.filter(b => b.hp > 0);
+    });
+    
+    // Orbs (in-place removal)
+    for (let i = state.orbs.length - 1; i >= 0; i--) {
+        const o = state.orbs[i];
+        if (o.dead || o.life <= 0) {
+            state.orbs.splice(i, 1);
+            continue;
+        }
+        o.a += o.va * dt;
+        o.r += o.vr * dt;
+        o.x = CENTER + Math.cos(o.a) * o.r;
+        o.y = CENTER + Math.sin(o.a) * o.r;
+        if (o.r > R.cast) o.life -= dt * 1.5;
+    }
+    
+    // Orb connections
+    state.arcs = [];
+    for (let i = 0; i < state.orbs.length; i++) {
+        for (let j = i + 1; j < state.orbs.length; j++) {
+            const a = state.orbs[i], b = state.orbs[j];
+            const d = dist(a.x, a.y, b.x, b.y);
+            if (d < 80) state.arcs.push({ a, b, str: 1 - d/80 });
+        }
+    }
+    
+    // Projectiles
+    for (let pi = 0; pi < state.projectiles.length; pi++) {
+        const p = state.projectiles[pi];
+        if (p.life <= 0) continue;
+        
+        // Add trail point
+        p.trail.push({ x: p.x, y: p.y, life: 1 });
+        if (p.trail.length > 8) p.trail.shift();
+        p.trail.forEach(t => t.life -= dt * 4);
+        
+        p.x += Math.cos(p.ang) * p.speed;
+        p.y += Math.sin(p.ang) * p.speed;
+        
+        const d = dist(p.x, p.y, CENTER, CENTER);
+        const pa = ang(p.x, p.y);
+        
+        // Ring collision
+        if (d > R.ring - R.ringW/2 && d < R.ring + R.ringW/2) {
+            const ra = normAng(pa - state.ring.angle);
+            for (const w of state.ring.walls) {
+                const ws = normAng(w.s), we = normAng(w.e);
+                if ((ws < we && ra >= ws && ra <= we) || (ws >= we && (ra >= ws || ra <= we))) {
+                    p.life = 0;
+                    // Ring hit particles
+                    for (let i = 0; i < 8; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        state.particles.push({ x: p.x, y: p.y, vx: Math.cos(a)*3, vy: Math.sin(a)*3, life: 0.3, col: COL.energy, size: 2 });
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Barrier collision
+        if (p.life > 0) {
+            state.players.forEach((pl, idx) => {
+                pl.barriers.forEach(bar => {
+                    if (bar.hp <= 0) return;
+                    const barDist = Math.abs(d - bar.radius);
+                    const barAngDiff = Math.abs(angDiff(pa, bar.ang));
+                    if (barDist < 18 && barAngDiff < bar.size + 0.05) {
+                        bar.hp -= p.heavy ? 2 : 1;
+                        bar.flash = 1;
+                        p.life = 0;
+                        // Barrier hit particles
+                        const col = idx === 0 ? COL.p1 : COL.p2;
+                        for (let i = 0; i < 10; i++) {
+                            const a = Math.random() * Math.PI * 2;
+                            state.particles.push({ x: p.x, y: p.y, vx: Math.cos(a)*4, vy: Math.sin(a)*4, life: 0.4, col: col.pri, size: 2 });
+                        }
+                    }
+                });
+            });
+        }
+        
+        // Life ring hit
+        if (p.life > 0 && d > R.life - R.lifeW && d < R.life + R.lifeW) {
+            const hitPid = inZone(p.x, p.y, 0) ? 0 : 1;
+            if (hitPid !== p.pid) {
+                state.players[hitPid].hp -= p.dmg;
+                state.players[hitPid].flash = 1;
+                p.life = 0;
+                // Life ring hit particles
+                const col = hitPid === 0 ? COL.p1 : COL.p2;
+                for (let i = 0; i < 15; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    state.particles.push({ x: p.x, y: p.y, vx: Math.cos(a)*5, vy: Math.sin(a)*5, life: 0.5, col: col.pri, size: 3 });
+                }
+            }
+        }
+        
+        // Out of bounds
+        if (d > R.outer) p.life = 0;
+    }
+    // In-place projectile removal
+    for (let i = state.projectiles.length - 1; i >= 0; i--) {
+        if (state.projectiles[i].life <= 0) state.projectiles.splice(i, 1);
+    }
+    // Cap projectiles
+    if (state.projectiles.length > MAX_PROJECTILES) {
+        state.projectiles.length = MAX_PROJECTILES;
+    }
+
+    // Beams (in-place removal)
+    for (let i = state.beams.length - 1; i >= 0; i--) {
+        state.beams[i].life -= dt * 2;
+        if (state.beams[i].life <= 0) state.beams.splice(i, 1);
+    }
+    // Cap beams
+    if (state.beams.length > MAX_BEAMS) {
+        state.beams.length = MAX_BEAMS;
+    }
+
+    // Particles (in-place removal)
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+        const p = state.particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.95; p.vy *= 0.95;
+        p.life -= dt * 2;
+        if (p.life <= 0) state.particles.splice(i, 1);
+    }
+    // Hard cap particles
+    if (state.particles.length > MAX_PARTICLES) {
+        state.particles.length = MAX_PARTICLES;
+    }
+}
+
+function checkWin() {
+    state.players.forEach((p, i) => {
+        if (p.hp <= 0) endGame(1 - i);
+    });
+}
+
+function updateHUD() {
+    // Only update DOM when values change (avoid innerHTML rebuild every frame)
+    const p0 = state.players[0], p1 = state.players[1];
+
+    if (hudCache.p0Energy !== p0.energy) {
+        hudCache.p0Energy = p0.energy;
+        const el = document.getElementById('energyTop');
+        let html = '<span class="label">EMBER</span>';
+        for (let e = 0; e < p0.maxEnergy; e++) {
+            html += `<div class="pip ${e < p0.energy ? 'full' : ''}"></div>`;
+        }
+        el.innerHTML = html;
+    }
+
+    if (hudCache.p1Energy !== p1.energy) {
+        hudCache.p1Energy = p1.energy;
+        const el = document.getElementById('energyBottom');
+        let html = '<span class="label">FROST</span>';
+        for (let e = 0; e < p1.maxEnergy; e++) {
+            html += `<div class="pip ${e < p1.energy ? 'full' : ''}"></div>`;
+        }
+        el.innerHTML = html;
+    }
+
+    if (hudCache.p0Hp !== p0.hp) {
+        hudCache.p0Hp = p0.hp;
+        document.getElementById('lifeP1').textContent = Math.max(0, p0.hp);
+    }
+
+    if (hudCache.p1Hp !== p1.hp) {
+        hudCache.p1Hp = p1.hp;
+        document.getElementById('lifeP2').textContent = Math.max(0, p1.hp);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════════════════════════
+function draw() {
+    const c = ctx;
+    c.clearRect(0, 0, SIZE, SIZE);
+    
+    c.save();
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.outer, 0, Math.PI * 2);
+    c.clip();
+    
+    // Static runes
+    state.runes.forEach(r => drawRune(c, r.seed, r.x, r.y, r.size, r.alpha));
+    
+    // Central eye
+    const eye = c.createRadialGradient(CENTER, CENTER, 0, CENTER, CENTER, R.eye);
+    eye.addColorStop(0, 'rgba(140, 120, 180, 0.3)');
+    eye.addColorStop(1, 'transparent');
+    c.fillStyle = eye;
+    c.beginPath();
+    c.arc(CENTER, CENTER, R.eye, 0, Math.PI * 2);
+    c.fill();
+    
+    // Ring
+    c.save();
+    c.translate(CENTER, CENTER);
+    c.rotate(state.ring.angle);
+    c.strokeStyle = COL.ring;
+    c.lineWidth = R.ringW;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.arc(0, 0, R.ring, 0, Math.PI * 2);
+    c.stroke();
+    c.strokeStyle = COL.energy;
+    c.lineWidth = 3;
+    state.ring.walls.forEach(w => {
+        c.beginPath();
+        c.arc(0, 0, R.ring, w.s, w.e);
+        c.stroke();
+    });
+    c.restore();
+    
+    // Player barriers
+    state.players.forEach((p, pid) => {
+        const col = pid === 0 ? COL.p1 : COL.p2;
+        p.barriers.forEach(bar => {
+            if (bar.hp <= 0) return;
+            const flash = bar.flash > 0 ? bar.flash : 0;
+            c.save();
+            c.translate(CENTER, CENTER);
+            c.globalAlpha = 0.3 + flash * 0.4;
+            c.strokeStyle = col.glow;
+            c.lineWidth = 14;
+            c.lineCap = 'round';
+            c.beginPath();
+            c.arc(0, 0, bar.radius, bar.ang - bar.size, bar.ang + bar.size);
+            c.stroke();
+            c.globalAlpha = 0.8 + flash * 0.2;
+            c.strokeStyle = col.pri;
+            c.lineWidth = 4;
+            c.beginPath();
+            c.arc(0, 0, bar.radius, bar.ang - bar.size, bar.ang + bar.size);
+            c.stroke();
+            c.restore();
+        });
+    });
+    
+    // Life rings
+    state.players.forEach((p, pid) => {
+        const col = pid === 0 ? COL.p1 : COL.p2;
+        const fullStartAng = p.angle - Math.PI/2;
+        const fullEndAng = p.angle + Math.PI/2;
+        const hpRatio = Math.max(0, p.hp / 100);
+        const flash = p.flash > 0 ? p.flash : 0;
+        
+        // Background (full arc)
+        c.strokeStyle = col.dim;
+        c.lineWidth = R.lifeW;
+        c.lineCap = 'butt';
+        c.beginPath();
+        c.arc(CENTER, CENTER, R.life, fullStartAng, fullEndAng);
+        c.stroke();
+        
+        // Health (shrinks from both ends)
+        const halfSpan = (Math.PI / 2) * hpRatio;
+        const hpStartAng = p.angle - halfSpan;
+        const hpEndAng = p.angle + halfSpan;
+        
+        c.globalAlpha = 0.8 + flash * 0.2;
+        c.strokeStyle = col.pri;
+        c.lineWidth = R.lifeW - 2;
+        c.beginPath();
+        c.arc(CENTER, CENTER, R.life, hpStartAng, hpEndAng);
+        c.stroke();
+        c.globalAlpha = 1;
+    });
+    
+    // Arc lightning between orbs
+    state.arcs.forEach(arc => {
+        const grad = c.createLinearGradient(arc.a.x, arc.a.y, arc.b.x, arc.b.y);
+        grad.addColorStop(0, arc.a.color.mid);
+        grad.addColorStop(0.5, '#fff');
+        grad.addColorStop(1, arc.b.color.mid);
+        c.strokeStyle = grad;
+        c.lineWidth = 2 * arc.str;
+        c.globalAlpha = 0.6 * arc.str;
+        c.beginPath();
+        const segs = 5;
+        for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const x = lerp(arc.a.x, arc.b.x, t);
+            const y = lerp(arc.a.y, arc.b.y, t);
+            const wave = Math.sin(t * Math.PI * 2 + state.time * 15) * 6 * arc.str;
+            const px = -(arc.b.y - arc.a.y), py = arc.b.x - arc.a.x;
+            const pl = Math.sqrt(px*px + py*py) || 1;
+            if (i === 0) c.moveTo(x + (px/pl)*wave, y + (py/pl)*wave);
+            else c.lineTo(x + (px/pl)*wave, y + (py/pl)*wave);
+        }
+        c.stroke();
+        c.globalAlpha = 1;
+    });
+    
+    // Orbs
+    state.orbs.forEach(o => {
+        if (o.dead) return;
+        const sz = 10;
+        const col = o.color;
+        c.globalAlpha = o.life;
+        
+        // Glow
+        const glow = c.createRadialGradient(o.x, o.y, 0, o.x, o.y, sz * 1.5);
+        glow.addColorStop(0, col.mid);
+        glow.addColorStop(0.5, col.outer);
+        glow.addColorStop(1, 'transparent');
+        c.fillStyle = glow;
+        c.beginPath();
+        c.arc(o.x, o.y, sz * 1.5, 0, Math.PI * 2);
+        c.fill();
+        
+        // Core
+        const core = c.createRadialGradient(o.x - sz*0.2, o.y - sz*0.2, 0, o.x, o.y, sz);
+        core.addColorStop(0, '#fff');
+        core.addColorStop(0.3, col.core);
+        core.addColorStop(0.7, col.mid);
+        core.addColorStop(1, col.outer);
+        c.fillStyle = core;
+        c.beginPath();
+        c.arc(o.x, o.y, sz, 0, Math.PI * 2);
+        c.fill();
+        
+        // Highlight
+        c.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        c.beginPath();
+        c.arc(o.x - sz * 0.3, o.y - sz * 0.3, sz * 0.25, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1;
+    });
+    
+    // Spell buttons
+    state.players.forEach((p, pid) => {
+        const col = pid === 0 ? COL.p1 : COL.p2;
+        const btns = getSpellBtns(pid);
+        btns.forEach(btn => {
+            const canCast = p.energy >= btn.spell.cost;
+            c.globalAlpha = canCast ? 0.9 : 0.3;
+            
+            // Button background
+            c.fillStyle = 'rgba(10, 10, 20, 0.7)';
+            c.beginPath();
+            c.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+            c.fill();
+            
+            // Border
+            c.strokeStyle = canCast ? col.pri : '#333';
+            c.lineWidth = 2;
+            c.stroke();
+            
+            // Sigil
+            drawSigil(c, btn.spell.id, btn.x, btn.y, btn.r * 1.6, canCast ? COL.energy : '#444');
+            
+            // Cost
+            c.fillStyle = canCast ? col.sec : '#444';
+            c.font = '10px Courier New';
+            c.textAlign = 'center';
+            c.fillText(btn.spell.cost, btn.x, btn.y + btn.r + 12);
+            c.globalAlpha = 1;
+        });
+    });
+    
+    // Aim line / Ward preview - draw for all active spell pointers (multi-touch)
+    for (const ptr of state.pointers.values()) {
+        if (ptr.type !== 'spell') continue;
+        const col = ptr.pid === 0 ? COL.p1 : COL.p2;
+        const dx = ptr.x - ptr.sx, dy = ptr.y - ptr.sy;
+        const len = Math.sqrt(dx*dx + dy*dy);
+
+        if (len > 15) {
+            const aimAng = Math.atan2(dy, dx);
+
+            if (ptr.spell.id === 'ward') {
+                // Ward preview - show where barrier will appear
+                const p = state.players[ptr.pid];
+                let previewAng = aimAng;
+                const maxDev = Math.PI * 0.45;
+                const dev = angDiff(p.angle, previewAng);
+                if (Math.abs(dev) > maxDev) {
+                    previewAng = p.angle + Math.sign(dev) * maxDev;
+                }
+
+                const endDist = dist(ptr.x, ptr.y, CENTER, CENTER);
+                const minR = R.cast + 15, maxR = R.life - 20;
+                let previewR = Math.max(minR, Math.min(maxR, endDist));
+
+                // Preview arc
+                c.save();
+                c.translate(CENTER, CENTER);
+                c.strokeStyle = col.sec;
+                c.lineWidth = 8;
+                c.lineCap = 'round';
+                c.globalAlpha = 0.4 + Math.sin(state.time * 6) * 0.1;
+                c.setLineDash([6, 6]);
+                c.beginPath();
+                c.arc(0, 0, previewR, previewAng - 0.15, previewAng + 0.15);
+                c.stroke();
+                c.setLineDash([]);
+                c.restore();
+
+                // Line to preview
+                c.strokeStyle = col.pri;
+                c.lineWidth = 1.5;
+                c.globalAlpha = 0.5;
+                c.setLineDash([4, 4]);
+                c.beginPath();
+                c.moveTo(ptr.sx, ptr.sy);
+                const previewX = CENTER + Math.cos(previewAng) * previewR;
+                const previewY = CENTER + Math.sin(previewAng) * previewR;
+                c.lineTo(previewX, previewY);
+                c.stroke();
+                c.setLineDash([]);
+                c.globalAlpha = 1;
+            } else {
+                // Standard aim line
+                c.strokeStyle = col.pri;
+                c.lineWidth = 2;
+                c.globalAlpha = 0.6;
+                c.setLineDash([8, 4]);
+                c.beginPath();
+                c.moveTo(ptr.sx, ptr.sy);
+                c.lineTo(ptr.x, ptr.y);
+                c.stroke();
+                c.setLineDash([]);
+
+                // Arrow
+                c.fillStyle = col.pri;
+                c.beginPath();
+                c.moveTo(ptr.x, ptr.y);
+                c.lineTo(ptr.x - Math.cos(aimAng - 0.35) * 10, ptr.y - Math.sin(aimAng - 0.35) * 10);
+                c.lineTo(ptr.x - Math.cos(aimAng + 0.35) * 10, ptr.y - Math.sin(aimAng + 0.35) * 10);
+                c.closePath();
+                c.fill();
+                c.globalAlpha = 1;
+            }
+        }
+    }
+    
+    // Projectiles with trails
+    state.projectiles.forEach(p => {
+        const col = p.pid === 0 ? COL.p1 : COL.p2;
+        
+        // Trail
+        if (p.trail.length > 1) {
+            c.strokeStyle = col.pri;
+            c.lineWidth = p.heavy ? 4 : 2;
+            c.lineCap = 'round';
+            c.beginPath();
+            p.trail.forEach((t, i) => {
+                c.globalAlpha = t.life * 0.4;
+                if (i === 0) c.moveTo(t.x, t.y); else c.lineTo(t.x, t.y);
+            });
+            c.stroke();
+        }
+        c.globalAlpha = 1;
+        
+        // Head
+        c.save();
+        c.translate(p.x, p.y);
+        c.rotate(p.ang);
+        c.fillStyle = col.pri;
+        
+        if (p.heavy) {
+            // Lance - bigger diamond
+            c.beginPath();
+            c.moveTo(14, 0);
+            c.lineTo(0, 6);
+            c.lineTo(-6, 0);
+            c.lineTo(0, -6);
+            c.closePath();
+            c.fill();
+            c.fillStyle = '#fff';
+            c.beginPath();
+            c.arc(0, 0, 3, 0, Math.PI * 2);
+            c.fill();
+        } else {
+            // Bolt - smaller circle
+            c.beginPath();
+            c.arc(0, 0, 5, 0, Math.PI * 2);
+            c.fill();
+            c.fillStyle = '#fff';
+            c.beginPath();
+            c.arc(0, 0, 2, 0, Math.PI * 2);
+            c.fill();
+        }
+        c.restore();
+    });
+    
+    // Beams with energy drain effect
+    state.beams.forEach(b => {
+        const col = b.pid === 0 ? COL.p1 : COL.p2;
+        c.globalAlpha = b.life * 2;
+        c.lineCap = 'round';
+        
+        if (b.drain) {
+            // Drain beam - two halves: opponent color -> thief color
+            const victimCol = b.fromCol === 0 ? COL.p1 : COL.p2;
+            const thiefCol = b.toCol === 0 ? COL.p1 : COL.p2;
+            
+            // Midpoint
+            const mx = (b.sx + b.ex) / 2;
+            const my = (b.sy + b.ey) / 2;
+            
+            // Victim half (from hit point to middle)
+            c.strokeStyle = victimCol.pri;
+            c.lineWidth = 5;
+            c.beginPath();
+            c.moveTo(b.ex, b.ey);
+            c.lineTo(mx, my);
+            c.stroke();
+            
+            // Thief half (from middle to caster)
+            c.strokeStyle = thiefCol.pri;
+            c.beginPath();
+            c.moveTo(mx, my);
+            c.lineTo(b.sx, b.sy);
+            c.stroke();
+        } else {
+            // Normal beam
+            c.strokeStyle = col.pri;
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(b.sx, b.sy);
+            c.lineTo(b.ex, b.ey);
+            c.stroke();
+        }
+        c.globalAlpha = 1;
+    });
+    
+    // Particles
+    state.particles.forEach(p => {
+        c.globalAlpha = p.life;
+        c.fillStyle = p.col;
+        c.beginPath();
+        c.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        c.fill();
+    });
+    c.globalAlpha = 1;
+    
+    c.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════════════════════════
+let last = 0, orbT = 0;
+
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.1);
+    last = ts;
+    
+    if (state.running) {
+        orbT += dt;
+        if (orbT > 1 && state.orbs.length < 5) { orbT = 0; spawnOrb(); }
+        update(dt);
+        checkWin();
+        updateHUD();
+    }
+    
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME CONTROL
+// ═══════════════════════════════════════════════════════════════════
+function resetGame() {
+    state.running = true;
+    state.time = 0;
+    state.players[0] = { id: 0, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 1.5, barriers: [], flash: 0 };
+    state.players[1] = { id: 1, hp: 100, energy: 2, maxEnergy: 5, angle: Math.PI * 0.5, barriers: [], flash: 0 };
+    state.ring.angle = 0;
+    state.ring.target = 0;
+    state.orbs = [];
+    state.projectiles = [];
+    state.beams = [];
+    state.particles = [];
+    state.arcs = [];
+    generateBarriers(0);
+    generateBarriers(1);
+    genBackground();
+}
+
+function endGame(winner) {
+    state.running = false;
+    const col = winner === 0 ? COL.p1 : COL.p2;
+    document.getElementById('winnerText').textContent = winner === 0 ? 'EMBER WINS' : 'FROST WINS';
+    document.getElementById('winnerText').style.color = col.pri;
+    document.getElementById('winnerSub').textContent = 'THE DUEL IS DECIDED';
+    document.getElementById('endOverlay').classList.remove('hidden');
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+    document.getElementById('startOverlay').classList.add('hidden');
+    resetGame();
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+    document.getElementById('endOverlay').classList.add('hidden');
+    resetGame();
+});
+
+// Initialize
+genBackground();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

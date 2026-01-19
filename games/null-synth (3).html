@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=720, height=720, user-scalable=no">
+  <title>NULL SYNTH</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    :root {
+      --void: #0a0a0f;
+      --phosphor: #00ff88;
+      --amber: #ffaa00;
+      --cyan: #00ffff;
+      --magenta: #ff00aa;
+      --blood: #ff3344;
+      --violet: #aa44ff;
+    }
+
+    html, body {
+      width: 720px;
+      height: 720px;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+    }
+
+    .crt-viewport {
+      position: relative;
+      width: 720px;
+      height: 720px;
+      border-radius: 50%;
+      overflow: hidden;
+    }
+
+    .content-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 10;
+      background: 
+        radial-gradient(ellipse at center, rgba(0,255,136,0.04) 0%, transparent 50%),
+        radial-gradient(circle at 25% 25%, rgba(0,255,255,0.03) 0%, transparent 25%),
+        radial-gradient(circle at 75% 75%, rgba(255,0,170,0.03) 0%, transparent 25%),
+        var(--void);
+    }
+
+    .bg-grid {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-image: 
+        radial-gradient(circle at center, transparent 0%, transparent 18%, rgba(0,255,136,0.035) 18.5%, transparent 19%),
+        radial-gradient(circle at center, transparent 0%, transparent 38%, rgba(0,255,136,0.025) 38.5%, transparent 39%),
+        radial-gradient(circle at center, transparent 0%, transparent 58%, rgba(0,255,136,0.02) 58.5%, transparent 59%),
+        radial-gradient(circle at center, transparent 0%, transparent 78%, rgba(0,255,136,0.015) 78.5%, transparent 79%);
+      animation: bg-pulse 6s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes bg-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .bg-hex {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%2300ff88' fill-opacity='1'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    #synth-container {
+      position: absolute;
+      width: 720px;
+      height: 720px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Title Overlay */
+    #title-overlay {
+      position: absolute;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      background: radial-gradient(ellipse at center, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0.9) 100%);
+      border-radius: 50%;
+      transition: opacity 0.8s, visibility 0.8s;
+    }
+
+    #title-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .title-main {
+      font-size: 48px;
+      letter-spacing: 16px;
+      color: var(--phosphor);
+      text-shadow: 0 0 30px var(--phosphor), 0 0 60px var(--phosphor);
+      margin-bottom: 10px;
+    }
+
+    .title-sub {
+      font-size: 10px;
+      letter-spacing: 8px;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 60px;
+    }
+
+    .title-instructions {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+      line-height: 2.5;
+      margin-bottom: 60px;
+    }
+
+    .title-instructions kbd {
+      color: var(--phosphor);
+      padding: 3px 8px;
+      border: 1px solid rgba(0,255,136,0.3);
+      border-radius: 3px;
+    }
+
+    .title-prompt {
+      font-size: 14px;
+      letter-spacing: 6px;
+      color: var(--phosphor);
+      cursor: pointer;
+      padding: 20px 50px;
+      border: 2px solid var(--phosphor);
+      transition: all 0.3s;
+      animation: prompt-pulse 2s ease-in-out infinite;
+    }
+
+    .title-prompt:hover {
+      background: var(--phosphor);
+      color: var(--void);
+      box-shadow: 0 0 40px var(--phosphor);
+    }
+
+    @keyframes prompt-pulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(0,255,136,0.3); }
+      50% { box-shadow: 0 0 30px rgba(0,255,136,0.6); }
+    }
+
+    /* Center XY Pad */
+    #center-hub {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle, rgba(0,255,136,0.1) 0%, rgba(10,10,15,0.98) 70%);
+      border: 2px solid rgba(0,255,136,0.5);
+      box-shadow: 
+        0 0 50px rgba(0,0,0,0.8),
+        0 0 30px rgba(0,255,136,0.15),
+        inset 0 0 40px rgba(0,255,136,0.08);
+      cursor: crosshair;
+      transition: all 0.3s;
+    }
+
+    #center-hub:hover, #center-hub.active {
+      border-color: var(--phosphor);
+      box-shadow: 
+        0 0 50px rgba(0,0,0,0.8),
+        0 0 40px rgba(0,255,136,0.4),
+        inset 0 0 60px rgba(0,255,136,0.15);
+    }
+
+    #xy-cursor {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--phosphor);
+      box-shadow: 0 0 15px var(--phosphor), 0 0 30px var(--phosphor);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      left: 50%;
+      top: 50%;
+    }
+
+    #xy-crosshair-h, #xy-crosshair-v {
+      position: absolute;
+      background: rgba(0,255,136,0.25);
+      pointer-events: none;
+    }
+
+    #xy-crosshair-h { width: 100%; height: 1px; top: 50%; left: 0; }
+    #xy-crosshair-v { width: 1px; height: 100%; left: 50%; top: 0; }
+
+    #suit-indicator {
+      position: absolute;
+      bottom: 18px;
+      font-size: 8px;
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px currentColor;
+      pointer-events: none;
+    }
+
+    /* Edge Controls */
+    .edge-control {
+      position: absolute;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(10,10,15,0.95);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(0,255,136,0.3);
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    #bpm-control {
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    #play-control {
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .ctrl-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: rgba(0,255,136,0.1);
+      border: 2px solid rgba(0,255,136,0.5);
+      color: var(--phosphor);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(0,255,136,0.2);
+      box-shadow: 0 0 15px rgba(0,255,136,0.5);
+      transform: scale(1.1);
+    }
+
+    .ctrl-btn.active {
+      background: var(--phosphor) !important;
+      color: var(--void) !important;
+      box-shadow: 0 0 25px var(--phosphor);
+    }
+
+    .ctrl-btn.danger {
+      border-color: rgba(255,51,68,0.5);
+      color: var(--blood);
+      background: rgba(255,51,68,0.1);
+    }
+
+    .ctrl-btn.danger:hover {
+      background: rgba(255,51,68,0.2);
+      box-shadow: 0 0 15px rgba(255,51,68,0.5);
+    }
+
+    #bpm-display {
+      font-size: 11px;
+      color: var(--phosphor);
+      text-shadow: 0 0 10px var(--phosphor);
+      min-width: 65px;
+      text-align: center;
+    }
+
+    /* Synth Pads - 3 RINGS */
+    #pad-container {
+      position: absolute;
+      width: 720px;
+      height: 720px;
+      pointer-events: none;
+    }
+
+    .synth-pad {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+      background: rgba(10,10,15,0.9);
+      border: 2px solid;
+    }
+
+    .synth-pad:hover {
+      transform: scale(1.2);
+      z-index: 50;
+    }
+
+    .synth-pad.active {
+      transform: scale(1.25);
+      z-index: 50;
+    }
+
+    .synth-pad svg {
+      width: 26px;
+      height: 26px;
+      pointer-events: none;
+      filter: drop-shadow(0 0 3px currentColor);
+      transition: filter 0.1s;
+    }
+
+    .synth-pad:hover svg,
+    .synth-pad.active svg {
+      filter: drop-shadow(0 0 10px currentColor) drop-shadow(0 0 20px currentColor);
+    }
+
+    /* Suit colors */
+    .synth-pad.circuit { border-color: var(--amber); color: var(--amber); }
+    .synth-pad.circuit:hover, .synth-pad.circuit.active { 
+      background: radial-gradient(circle, rgba(255,170,0,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(255,170,0,0.5);
+    }
+
+    .synth-pad.signal { border-color: var(--cyan); color: var(--cyan); }
+    .synth-pad.signal:hover, .synth-pad.signal.active { 
+      background: radial-gradient(circle, rgba(0,255,255,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(0,255,255,0.5);
+    }
+
+    .synth-pad.code { border-color: var(--violet); color: var(--violet); }
+    .synth-pad.code:hover, .synth-pad.code.active { 
+      background: radial-gradient(circle, rgba(170,68,255,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(170,68,255,0.5);
+    }
+
+    .synth-pad.maker { border-color: var(--blood); color: var(--blood); }
+    .synth-pad.maker:hover, .synth-pad.maker.active { 
+      background: radial-gradient(circle, rgba(255,51,68,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(255,51,68,0.5);
+    }
+
+    .synth-pad.emergence { border-color: var(--phosphor); color: var(--phosphor); }
+    .synth-pad.emergence:hover, .synth-pad.emergence.active { 
+      background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(0,255,136,0.5);
+    }
+
+    .synth-pad.glitch { border-color: var(--magenta); color: var(--magenta); }
+    .synth-pad.glitch:hover, .synth-pad.glitch.active { 
+      background: radial-gradient(circle, rgba(255,0,170,0.4) 0%, rgba(10,10,15,0.9) 70%);
+      box-shadow: 0 0 25px rgba(255,0,170,0.5);
+    }
+
+    .synth-pad.triggered {
+      animation: trigger-flash 0.15s ease-out;
+    }
+
+    @keyframes trigger-flash {
+      0% { filter: brightness(1); }
+      50% { filter: brightness(1.8); }
+      100% { filter: brightness(1); }
+    }
+
+    /* Sequencer */
+    #sequencer-ring {
+      position: absolute;
+      width: 700px;
+      height: 700px;
+      pointer-events: none;
+    }
+
+    .seq-step {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.15);
+      background: rgba(10,10,15,0.95);
+      cursor: pointer;
+      pointer-events: auto;
+      transition: all 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .seq-step .step-number {
+      font-size: 7px;
+      color: rgba(255,255,255,0.25);
+      pointer-events: none;
+    }
+
+    .seq-step.recorded .step-number { display: none; }
+
+    .seq-step.recorded::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .seq-step.playing {
+      transform: scale(1.5);
+      box-shadow: 0 0 20px var(--phosphor);
+      border-color: var(--phosphor) !important;
+      z-index: 100;
+    }
+
+    /* CRT Effects */
+    .crt-effects {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 100;
+      pointer-events: none;
+      border-radius: 50%;
+      overflow: hidden;
+    }
+
+    .crt-effects * { pointer-events: none !important; }
+
+    .phosphor-mask {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-image: 
+        radial-gradient(ellipse 33% 100% at 16% 50%, rgba(255, 0, 0, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse 33% 100% at 50% 50%, rgba(0, 255, 0, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse 33% 100% at 84% 50%, rgba(0, 100, 255, 0.06) 0%, transparent 50%);
+      background-size: 3px 3px;
+      mix-blend-mode: screen;
+    }
+
+    .scanlines {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 2px,
+        rgba(0, 0, 0, 0.04) 2px, rgba(0, 0, 0, 0.04) 4px
+      );
+    }
+
+    .scan-beam {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(
+        to bottom,
+        transparent 0%, transparent 45%,
+        rgba(255, 255, 255, 0.01) 50%,
+        transparent 55%, transparent 100%
+      );
+      animation: beam-roll 5s linear infinite;
+    }
+
+    @keyframes beam-roll {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100%); }
+    }
+
+    .glass-bubble {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: 
+        radial-gradient(ellipse 45% 35% at 30% 25%, rgba(255, 255, 255, 0.03) 0%, transparent 60%),
+        radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.15) 75%, rgba(0, 0, 0, 0.4) 90%, rgba(0, 0, 0, 0.7) 100%);
+      border-radius: 50%;
+    }
+
+    .vignette {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      box-shadow: 
+        inset 0 0 80px 20px rgba(0, 0, 0, 0.5),
+        inset 0 0 150px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .static-noise {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      opacity: 0.01;
+      animation: noise-crawl 0.1s steps(5) infinite;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    @keyframes noise-crawl {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(-2%, 2%); }
+    }
+  </style>
+</head>
+<body>
+  <div class="crt-viewport">
+    <div class="content-layer">
+      <div class="bg-grid"></div>
+      <div class="bg-hex"></div>
+
+      <div id="synth-container">
+        <!-- Title Overlay -->
+        <div id="title-overlay">
+          <div class="title-main">NULL SYNTH</div>
+          <div class="title-sub">SIGIL SOUND MACHINE</div>
+          <div class="title-instructions">
+            <kbd>A</kbd> - <kbd>L</kbd> PLAY NOTES &nbsp;•&nbsp; <kbd>1</kbd> - <kbd>6</kbd> SUITS<br>
+            <kbd>↑</kbd> <kbd>↓</kbd> BPM &nbsp;•&nbsp; <kbd>SPACE</kbd> PLAY
+          </div>
+          <div class="title-prompt" id="start-btn">▶ START</div>
+        </div>
+
+        <!-- Edge Controls -->
+        <div class="edge-control" id="bpm-control">
+          <button class="ctrl-btn" id="bpm-down">−</button>
+          <div id="bpm-display">120 BPM</div>
+          <button class="ctrl-btn" id="bpm-up">+</button>
+        </div>
+
+        <div class="edge-control" id="play-control">
+          <button class="ctrl-btn" id="play-btn">▶</button>
+          <button class="ctrl-btn danger" id="clear-btn">✕</button>
+        </div>
+
+        <!-- Sequencer Ring -->
+        <div id="sequencer-ring"></div>
+
+        <!-- Pad Container -->
+        <div id="pad-container"></div>
+
+        <!-- Center XY Pad -->
+        <div id="center-hub">
+          <div id="xy-crosshair-h"></div>
+          <div id="xy-crosshair-v"></div>
+          <div id="xy-cursor"></div>
+          <div id="suit-indicator" style="color: var(--phosphor)">EMERGENCE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CRT Effects -->
+    <div class="crt-effects">
+      <div class="phosphor-mask"></div>
+      <div class="scanlines"></div>
+      <div class="scan-beam"></div>
+      <div class="glass-bubble"></div>
+      <div class="vignette"></div>
+      <div class="static-noise"></div>
+    </div>
+  </div>
+
+<script>
+const SIGILS = {
+  circuit: {
+    color: '#ffaa00',
+    sigils: {
+      resistor: { svg: `<svg viewBox="0 0 100 100"><path d="M10 50 L25 50 L30 30 L40 70 L50 30 L60 70 L70 30 L75 50 L90 50" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      capacitor: { svg: `<svg viewBox="0 0 100 100"><path d="M10 50 L40 50 M40 25 L40 75 M60 25 L60 75 M60 50 L90 50" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      inductor: { svg: `<svg viewBox="0 0 100 100"><path d="M10 50 L20 50 Q30 50 30 40 Q30 30 40 30 Q50 30 50 40 Q50 50 60 50 Q70 50 70 40 Q70 30 80 30 Q90 30 90 40 L90 50" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      diode: { svg: `<svg viewBox="0 0 100 100"><path d="M10 50 L35 50 M35 30 L35 70 L65 50 L35 30 M65 30 L65 70 M65 50 L90 50" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      transistor: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" stroke="currentColor" fill="none" stroke-width="2"/><path d="M35 35 L35 65 M35 45 L60 30 M35 55 L60 70" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      ground: { svg: `<svg viewBox="0 0 100 100"><path d="M50 20 L50 45 M30 45 L70 45 M35 55 L65 55 M40 65 L60 65 M45 75 L55 75" stroke="currentColor" fill="none" stroke-width="3"/></svg>` }
+    }
+  },
+  signal: {
+    color: '#00ffff',
+    sigils: {
+      wave: { svg: `<svg viewBox="0 0 100 100"><path d="M10 50 Q25 20 40 50 Q55 80 70 50 Q85 20 100 50" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      antenna: { svg: `<svg viewBox="0 0 100 100"><path d="M50 85 L50 40 M30 20 L50 40 L70 20 M35 30 L50 45 L65 30" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      node: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="12" stroke="currentColor" fill="none" stroke-width="3"/><path d="M50 38 L50 15 M50 62 L50 85 M38 50 L15 50 M62 50 L85 50" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      packet: { svg: `<svg viewBox="0 0 100 100"><rect x="25" y="35" width="50" height="30" stroke="currentColor" fill="none" stroke-width="3"/><path d="M25 35 L50 55 L75 35" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      firewall: { svg: `<svg viewBox="0 0 100 100"><rect x="20" y="20" width="60" height="60" stroke="currentColor" fill="none" stroke-width="3"/><path d="M20 40 L80 40 M20 60 L80 60 M40 20 L40 80 M60 20 L60 80" stroke="currentColor" fill="none" stroke-width="1.5" opacity="0.5"/></svg>` },
+      null: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="25" stroke="currentColor" fill="none" stroke-width="3"/><path d="M30 70 L70 30" stroke="currentColor" fill="none" stroke-width="3"/></svg>` }
+    }
+  },
+  code: {
+    color: '#aa44ff',
+    sigils: {
+      loop: { svg: `<svg viewBox="0 0 100 100"><path d="M70 35 A20 20 0 1 0 70 65 M70 35 L80 25 M70 35 L80 45" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      branch: { svg: `<svg viewBox="0 0 100 100"><path d="M50 80 L50 50 L25 25 M50 50 L75 25" stroke="currentColor" fill="none" stroke-width="3"/><circle cx="25" cy="25" r="6" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="75" cy="25" r="6" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      function: { svg: `<svg viewBox="0 0 100 100"><text x="50" y="65" text-anchor="middle" font-family="monospace" font-size="50" fill="none" stroke="currentColor" stroke-width="2">ƒ</text></svg>` },
+      pointer: { svg: `<svg viewBox="0 0 100 100"><path d="M30 70 L50 30 L70 70 M40 55 L60 55" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      recursion: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="35" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="50" cy="50" r="25" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="50" cy="50" r="15" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      exception: { svg: `<svg viewBox="0 0 100 100"><path d="M50 20 L80 75 L20 75 Z" stroke="currentColor" fill="none" stroke-width="3"/><path d="M50 40 L50 55 M50 62 L50 67" stroke="currentColor" fill="none" stroke-width="3"/></svg>` }
+    }
+  },
+  maker: {
+    color: '#ff3344',
+    sigils: {
+      solder: { svg: `<svg viewBox="0 0 100 100"><path d="M25 75 L75 25" stroke="currentColor" fill="none" stroke-width="3"/><circle cx="75" cy="25" r="8" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      multimeter: { svg: `<svg viewBox="0 0 100 100"><rect x="25" y="20" width="50" height="65" rx="5" stroke="currentColor" fill="none" stroke-width="3"/><circle cx="50" cy="45" r="15" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      pcb: { svg: `<svg viewBox="0 0 100 100"><rect x="20" y="20" width="60" height="60" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="35" cy="35" r="5" stroke="currentColor" fill="none"/><circle cx="65" cy="35" r="5" stroke="currentColor" fill="none"/><circle cx="35" cy="65" r="5" stroke="currentColor" fill="none"/><circle cx="65" cy="65" r="5" stroke="currentColor" fill="none"/></svg>` },
+      led: { svg: `<svg viewBox="0 0 100 100"><path d="M35 60 L35 40 L65 40 L65 60 Z" stroke="currentColor" fill="none" stroke-width="2"/><path d="M35 60 L25 75 M65 60 L75 75 M50 40 L50 25" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      wire: { svg: `<svg viewBox="0 0 100 100"><path d="M20 50 Q35 30 50 50 Q65 70 80 50" stroke="currentColor" fill="none" stroke-width="3"/><circle cx="20" cy="50" r="4" fill="currentColor"/><circle cx="80" cy="50" r="4" fill="currentColor"/></svg>` },
+      prototype: { svg: `<svg viewBox="0 0 100 100"><rect x="20" y="30" width="60" height="40" stroke="currentColor" fill="none" stroke-width="2" stroke-dasharray="5,3"/><circle cx="35" cy="50" r="8" stroke="currentColor" fill="none"/><circle cx="65" cy="50" r="8" stroke="currentColor" fill="none"/></svg>` }
+    }
+  },
+  emergence: {
+    color: '#00ff88',
+    sigils: {
+      entropy: { svg: `<svg viewBox="0 0 100 100"><path d="M30 30 L45 45 M55 35 L70 50 M25 55 L40 70 M60 60 L75 75 M35 50 L65 45" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      emergenceSigil: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="70" r="5" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="35" cy="55" r="5" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="65" cy="55" r="5" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="50" cy="40" r="8" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="50" cy="25" r="12" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      feedback: { svg: `<svg viewBox="0 0 100 100"><path d="M65 30 A25 25 0 1 1 35 30" stroke="currentColor" fill="none" stroke-width="3"/><path d="M35 30 L25 25 M35 30 L30 40 M65 30 L75 25 M65 30 L70 40" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      sync: { svg: `<svg viewBox="0 0 100 100"><path d="M20 35 Q35 20 50 35 Q65 50 80 35" stroke="currentColor" fill="none" stroke-width="2"/><path d="M20 50 Q35 35 50 50 Q65 65 80 50" stroke="currentColor" fill="none" stroke-width="2"/><path d="M20 65 Q35 50 50 65 Q65 80 80 65" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      daemon: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="40" cy="45" r="5" fill="currentColor"/><circle cx="60" cy="45" r="5" fill="currentColor"/><path d="M35 60 Q50 70 65 60" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      sigil: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" stroke="currentColor" fill="none" stroke-width="2"/><path d="M50 20 L50 35 M50 65 L50 80 M20 50 L35 50 M65 50 L80 50" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="50" cy="50" r="8" stroke="currentColor" fill="none" stroke-width="2"/></svg>` }
+    }
+  },
+  glitch: {
+    color: '#ff00aa',
+    sigils: {
+      corrupt: { svg: `<svg viewBox="0 0 100 100"><rect x="25" y="25" width="50" height="50" stroke="currentColor" fill="none" stroke-width="2"/><path d="M25 40 L40 40 L40 25 M60 75 L60 60 L75 60 M30 70 L70 30" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      noise: { svg: `<svg viewBox="0 0 100 100"><path d="M20 50 L25 35 L30 55 L35 40 L40 60 L45 30 L50 55 L55 45 L60 65 L65 35 L70 50 L75 40 L80 55" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      overflow: { svg: `<svg viewBox="0 0 100 100"><rect x="30" y="40" width="40" height="40" stroke="currentColor" fill="none" stroke-width="2"/><path d="M35 40 L35 30 L65 30 L65 40 M40 30 L40 20 L60 20 L60 30" stroke="currentColor" fill="none" stroke-width="2"/></svg>` },
+      deadlock: { svg: `<svg viewBox="0 0 100 100"><circle cx="35" cy="50" r="15" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="65" cy="50" r="15" stroke="currentColor" fill="none" stroke-width="2"/><path d="M45 45 L55 45 M55 55 L45 55" stroke="currentColor" fill="none" stroke-width="3"/></svg>` },
+      phantom: { svg: `<svg viewBox="0 0 100 100"><path d="M30 70 L30 40 Q30 25 50 25 Q70 25 70 40 L70 70 Q65 60 60 70 Q55 60 50 70 Q45 60 40 70 Q35 60 30 70" stroke="currentColor" fill="none" stroke-width="2"/><circle cx="40" cy="45" r="4" fill="currentColor"/><circle cx="60" cy="45" r="4" fill="currentColor"/></svg>` },
+      voidSigil: { svg: `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="35" stroke="currentColor" fill="none" stroke-width="1" opacity="0.4"/><circle cx="50" cy="50" r="25" stroke="currentColor" fill="none" stroke-width="1" opacity="0.6"/><circle cx="50" cy="50" r="15" stroke="currentColor" fill="none" stroke-width="1" opacity="0.8"/><circle cx="50" cy="50" r="5" fill="currentColor"/></svg>` }
+    }
+  }
+};
+
+const SUIT_COLORS = {
+  circuit: '#ffaa00',
+  signal: '#00ffff',
+  code: '#aa44ff',
+  maker: '#ff3344',
+  emergence: '#00ff88',
+  glitch: '#ff00aa'
+};
+
+class SynthEngine {
+  constructor() {
+    this.ctx = null;
+    this.initialized = false;
+    this.master = null;
+    this.filter = null;
+    this.noiseBuffer = null;
+    this.suitSounds = {
+      circuit: { type: 'sawtooth', octave: -1, attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, filterFreq: 600, filterQ: 3 },
+      signal: { type: 'sine', octave: 0, attack: 0.05, decay: 0.2, sustain: 0.6, release: 0.5, filterFreq: 2000, filterQ: 1 },
+      code: { type: 'square', octave: 0, attack: 0.005, decay: 0.15, sustain: 0.3, release: 0.2, filterFreq: 1200, filterQ: 5 },
+      maker: { type: 'triangle', octave: -1, attack: 0.001, decay: 0.2, sustain: 0.1, release: 0.15, filterFreq: 800, filterQ: 2 },
+      emergence: { type: 'sine', octave: 0, attack: 0.2, decay: 0.4, sustain: 0.7, release: 0.8, filterFreq: 1500, filterQ: 0.7 },
+      glitch: { type: 'sawtooth', octave: 1, attack: 0.001, decay: 0.1, sustain: 0.2, release: 0.1, filterFreq: 3000, filterQ: 12 }
+    };
+    this.scale = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33];
+  }
+  
+  async init() {
+    if (this.initialized) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.7;
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.value = -20;
+    this.compressor.ratio.value = 4;
+    this.filter = this.ctx.createBiquadFilter();
+    this.filter.type = 'lowpass';
+    this.filter.frequency.value = 2000;
+    this.filter.Q.value = 1;
+    this.reverb = this.ctx.createConvolver();
+    this.reverb.buffer = this.createReverbImpulse(2, 2.5);
+    this.reverbGain = this.ctx.createGain();
+    this.reverbGain.gain.value = 0.2;
+    this.delay = this.ctx.createDelay(1);
+    this.delay.delayTime.value = 0.2;
+    this.delayFeedback = this.ctx.createGain();
+    this.delayFeedback.gain.value = 0.25;
+    this.delayGain = this.ctx.createGain();
+    this.delayGain.gain.value = 0.15;
+    this.master.connect(this.filter);
+    this.filter.connect(this.compressor);
+    this.compressor.connect(this.ctx.destination);
+    this.compressor.connect(this.reverb);
+    this.reverb.connect(this.reverbGain);
+    this.reverbGain.connect(this.ctx.destination);
+    this.compressor.connect(this.delay);
+    this.delay.connect(this.delayFeedback);
+    this.delayFeedback.connect(this.delay);
+    this.delay.connect(this.delayGain);
+    this.delayGain.connect(this.ctx.destination);
+    this.createNoiseBuffer();
+    this.initialized = true;
+  }
+  
+  createReverbImpulse(duration, decay) {
+    const length = this.ctx.sampleRate * duration;
+    const impulse = this.ctx.createBuffer(2, length, this.ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = impulse.getChannelData(ch);
+      for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+    return impulse;
+  }
+  
+  createNoiseBuffer() {
+    const bufferSize = this.ctx.sampleRate * 2;
+    this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  }
+  
+  setFilterParams(x, y) {
+    if (this.filter) {
+      const now = this.ctx.currentTime;
+      this.filter.frequency.setTargetAtTime(200 + x * 7800, now, 0.05);
+      this.filter.Q.setTargetAtTime(0.5 + (1 - y) * 14.5, now, 0.05);
+    }
+  }
+  
+  playNote(noteIndex, suit = 'emergence') {
+    if (!this.initialized) return;
+    const sound = this.suitSounds[suit];
+    const now = this.ctx.currentTime;
+    let freq = this.scale[noteIndex % this.scale.length];
+    if (sound.octave) freq *= Math.pow(2, sound.octave);
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = sound.filterFreq;
+    filter.Q.value = sound.filterQ;
+    const totalTime = sound.attack + sound.decay + sound.release + 0.5;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + sound.attack);
+    gain.gain.linearRampToValueAtTime(sound.sustain * 0.35, now + sound.attack + sound.decay);
+    gain.gain.setValueAtTime(sound.sustain * 0.35, now + sound.attack + sound.decay + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + totalTime);
+    if (suit === 'glitch' && Math.random() > 0.5) {
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = this.noiseBuffer;
+      const noiseGain = this.ctx.createGain();
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.value = freq * 2;
+      noiseFilter.Q.value = 10;
+      noiseGain.gain.setValueAtTime(0.1, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.master);
+      noise.start(now);
+      noise.stop(now + 0.2);
+    }
+    const osc = this.ctx.createOscillator();
+    osc.type = sound.type;
+    osc.frequency.value = freq;
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = sound.type;
+    osc2.frequency.value = freq * 1.004;
+    const oscGain = this.ctx.createGain();
+    oscGain.gain.value = 0.5;
+    osc.connect(filter);
+    osc2.connect(oscGain);
+    oscGain.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    if (suit === 'maker' || suit === 'circuit') {
+      osc.frequency.setValueAtTime(freq * 1.5, now);
+      osc.frequency.exponentialRampToValueAtTime(freq, now + 0.05);
+    }
+    osc.start(now);
+    osc2.start(now);
+    osc.stop(now + totalTime + 0.1);
+    osc2.stop(now + totalTime + 0.1);
+  }
+  
+  async resume() { if (this.ctx?.state === 'suspended') await this.ctx.resume(); }
+}
+
+class NullSynth {
+  constructor() {
+    this.synth = new SynthEngine();
+    this.currentSuit = 'emergence';
+    this.bpm = 120;
+    this.isPlaying = false;
+    this.currentStep = 0;
+    this.sequencerInterval = null;
+    this.sequence = new Array(16).fill(null);
+    this.pads = [];
+    this.allSigils = [];
+    this.sequencerSteps = [];
+    // Multi-touch tracking
+    this.activeTouches = new Map(); // touchId -> pad element
+
+    Object.entries(SIGILS).forEach(([suitKey, suit]) => {
+      Object.entries(suit.sigils).forEach(([sigilKey, sigil]) => {
+        this.allSigils.push({ ...sigil, suit: suitKey, key: sigilKey, color: suit.color });
+      });
+    });
+
+    this.init();
+  }
+  
+  init() {
+    document.getElementById('start-btn').addEventListener('click', () => this.start());
+    this.setupXYPad();
+    document.getElementById('play-btn').addEventListener('click', () => this.toggleSequencer());
+    document.getElementById('clear-btn').addEventListener('click', () => this.clearSequence());
+    document.getElementById('bpm-up').addEventListener('click', () => { this.bpm = Math.min(200, this.bpm + 5); this.updateBPM(); });
+    document.getElementById('bpm-down').addEventListener('click', () => { this.bpm = Math.max(60, this.bpm - 5); this.updateBPM(); });
+    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    this.createPads();
+    this.createSequencer();
+    this.setupMultiTouch();
+  }
+
+  // Multi-touch support for playing multiple pads simultaneously
+  setupMultiTouch() {
+    const container = document.getElementById('pad-container');
+
+    // Find pad at given coordinates
+    const getPadAt = (x, y) => {
+      for (const pad of this.pads) {
+        const rect = pad.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return pad;
+        }
+      }
+      return null;
+    };
+
+    // Handle touch start - can have multiple simultaneous touches
+    container.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      for (const touch of e.changedTouches) {
+        const pad = getPadAt(touch.clientX, touch.clientY);
+        if (pad && !this.activeTouches.has(touch.identifier)) {
+          this.activeTouches.set(touch.identifier, pad);
+          this.triggerPad(pad, parseInt(pad.dataset.note), pad.dataset.suit);
+        }
+      }
+    }, { passive: false });
+
+    // Handle touch move - allows sliding between pads
+    container.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (const touch of e.changedTouches) {
+        const currentPad = this.activeTouches.get(touch.identifier);
+        const newPad = getPadAt(touch.clientX, touch.clientY);
+        if (newPad && newPad !== currentPad) {
+          // Deactivate old pad
+          if (currentPad) currentPad.classList.remove('active');
+          // Activate new pad
+          this.activeTouches.set(touch.identifier, newPad);
+          this.triggerPad(newPad, parseInt(newPad.dataset.note), newPad.dataset.suit);
+        }
+      }
+    }, { passive: false });
+
+    // Handle touch end
+    container.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      for (const touch of e.changedTouches) {
+        const pad = this.activeTouches.get(touch.identifier);
+        if (pad) {
+          pad.classList.remove('active');
+          this.activeTouches.delete(touch.identifier);
+        }
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchcancel', (e) => {
+      for (const touch of e.changedTouches) {
+        const pad = this.activeTouches.get(touch.identifier);
+        if (pad) pad.classList.remove('active');
+        this.activeTouches.delete(touch.identifier);
+      }
+    }, { passive: false });
+  }
+  
+  async start() {
+    await this.synth.init();
+    await this.synth.resume();
+    document.getElementById('title-overlay').classList.add('hidden');
+    setTimeout(() => this.synth.playNote(5, 'emergence'), 300);
+  }
+  
+  setupXYPad() {
+    const pad = document.getElementById('center-hub');
+    const cursor = document.getElementById('xy-cursor');
+    let isActive = false;
+    
+    const updateCursor = (e) => {
+      const rect = pad.getBoundingClientRect();
+      const centerX = rect.width / 2, centerY = rect.height / 2;
+      let x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+      let y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+      const dx = x - centerX, dy = y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = rect.width / 2 - 10;
+      if (dist > maxDist) { x = centerX + (dx / dist) * maxDist; y = centerY + (dy / dist) * maxDist; }
+      cursor.style.left = `${x}px`;
+      cursor.style.top = `${y}px`;
+      this.synth.setFilterParams(
+        Math.max(0, Math.min(1, x / rect.width)),
+        Math.max(0, Math.min(1, y / rect.height))
+      );
+    };
+    
+    pad.addEventListener('mousedown', (e) => { isActive = true; pad.classList.add('active'); updateCursor(e); });
+    document.addEventListener('mousemove', (e) => { if (isActive) updateCursor(e); });
+    document.addEventListener('mouseup', () => { isActive = false; pad.classList.remove('active'); });
+    pad.addEventListener('touchstart', (e) => { isActive = true; pad.classList.add('active'); updateCursor(e); e.preventDefault(); });
+    document.addEventListener('touchmove', (e) => { if (isActive) updateCursor(e); });
+    document.addEventListener('touchend', () => { isActive = false; pad.classList.remove('active'); });
+  }
+  
+  createPads() {
+    const container = document.getElementById('pad-container');
+    const centerX = 360, centerY = 360;
+    
+    // THREE RINGS - 12 pads each, properly spaced
+    // Inner ring: 12 pads at 105px radius (just outside 70px center hub)
+    // Middle ring: 12 pads at 165px radius
+    // Outer ring: 12 pads at 225px radius
+    const rings = [
+      { count: 12, radius: 105, offset: 0 },      // Inner
+      { count: 12, radius: 165, offset: Math.PI / 12 },  // Middle - offset by 15deg
+      { count: 12, radius: 225, offset: 0 }       // Outer
+    ];
+    
+    let sigilIndex = 0;
+    
+    rings.forEach((ring) => {
+      for (let i = 0; i < ring.count && sigilIndex < this.allSigils.length; i++) {
+        const sigil = this.allSigils[sigilIndex];
+        const angle = (i / ring.count) * Math.PI * 2 - Math.PI / 2 + ring.offset;
+        const x = centerX + Math.cos(angle) * ring.radius;
+        const y = centerY + Math.sin(angle) * ring.radius;
+        
+        const pad = document.createElement('div');
+        pad.className = `synth-pad ${sigil.suit}`;
+        pad.style.left = `${x - 26}px`;
+        pad.style.top = `${y - 26}px`;
+        pad.innerHTML = sigil.svg;
+        pad.dataset.note = sigilIndex % 12;
+        pad.dataset.suit = sigil.suit;
+        
+        pad.addEventListener('mousedown', (e) => { e.preventDefault(); this.triggerPad(pad, parseInt(pad.dataset.note), sigil.suit); });
+        pad.addEventListener('touchstart', (e) => { e.preventDefault(); this.triggerPad(pad, parseInt(pad.dataset.note), sigil.suit); });
+        pad.addEventListener('mouseup', () => pad.classList.remove('active'));
+        pad.addEventListener('mouseleave', () => pad.classList.remove('active'));
+        pad.addEventListener('touchend', () => pad.classList.remove('active'));
+        
+        container.appendChild(pad);
+        this.pads.push(pad);
+        sigilIndex++;
+      }
+    });
+  }
+  
+  triggerPad(pad, noteIndex, suit) {
+    pad.classList.add('active', 'triggered');
+    setTimeout(() => pad.classList.remove('triggered'), 150);
+    this.synth.playNote(noteIndex, suit);
+    this.currentSuit = suit;
+    this.updateSuitIndicator();
+    if (this.isPlaying) {
+      this.sequence[this.currentStep] = { note: noteIndex, suit };
+      this.updateSequencerStep(this.currentStep);
+    }
+  }
+  
+  createSequencer() {
+    const container = document.getElementById('sequencer-ring');
+    const centerX = 350, centerY = 350;
+    const radius = 290;
+    
+    for (let i = 0; i < 16; i++) {
+      const angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
+      const step = document.createElement('div');
+      step.className = 'seq-step';
+      step.style.left = `${centerX + Math.cos(angle) * radius - 10}px`;
+      step.style.top = `${centerY + Math.sin(angle) * radius - 10}px`;
+      step.innerHTML = `<span class="step-number">${i + 1}</span>`;
+      step.addEventListener('click', () => {
+        if (this.sequence[i]) {
+          this.sequence[i] = null;
+          step.classList.remove('recorded');
+          step.style.borderColor = '';
+          step.style.color = '';
+        }
+      });
+      container.appendChild(step);
+      this.sequencerSteps.push(step);
+    }
+  }
+  
+  updateSequencerStep(i) {
+    const step = this.sequencerSteps[i];
+    const note = this.sequence[i];
+    if (note) {
+      step.classList.add('recorded');
+      step.style.borderColor = SUIT_COLORS[note.suit];
+      step.style.color = SUIT_COLORS[note.suit];
+    } else {
+      step.classList.remove('recorded');
+      step.style.borderColor = '';
+      step.style.color = '';
+    }
+  }
+  
+  toggleSequencer() {
+    this.isPlaying ? this.stopSequencer() : this.startSequencer();
+  }
+  
+  startSequencer() {
+    this.isPlaying = true;
+    this.currentStep = 0;
+    document.getElementById('play-btn').textContent = '■';
+    document.getElementById('play-btn').classList.add('active');
+    this.sequencerInterval = setInterval(() => this.advanceStep(), (60 / this.bpm) * 250);
+  }
+  
+  stopSequencer() {
+    this.isPlaying = false;
+    document.getElementById('play-btn').textContent = '▶';
+    document.getElementById('play-btn').classList.remove('active');
+    clearInterval(this.sequencerInterval);
+    this.sequencerSteps.forEach(s => s.classList.remove('playing'));
+  }
+  
+  advanceStep() {
+    this.sequencerSteps.forEach(s => s.classList.remove('playing'));
+    this.sequencerSteps[this.currentStep].classList.add('playing');
+    const note = this.sequence[this.currentStep];
+    if (note) this.synth.playNote(note.note, note.suit);
+    this.currentStep = (this.currentStep + 1) % 16;
+  }
+  
+  clearSequence() {
+    this.sequence.fill(null);
+    this.sequencerSteps.forEach(s => {
+      s.classList.remove('recorded');
+      s.style.borderColor = '';
+      s.style.color = '';
+    });
+  }
+  
+  handleKeyDown(e) {
+    if (!document.getElementById('title-overlay').classList.contains('hidden')) return;
+    const keyToNote = { a:0, s:1, d:2, f:3, g:4, h:5, j:6, k:7, l:8, ';':9, "'":10, z:11 };
+    const keyToSuit = { 1:'circuit', 2:'signal', 3:'code', 4:'maker', 5:'emergence', 6:'glitch' };
+    
+    if (keyToNote[e.key.toLowerCase()] !== undefined) {
+      const n = keyToNote[e.key.toLowerCase()];
+      this.synth.playNote(n, this.currentSuit);
+      if (this.isPlaying) {
+        this.sequence[this.currentStep] = { note: n, suit: this.currentSuit };
+        this.updateSequencerStep(this.currentStep);
+      }
+      const pad = this.pads.find(p => +p.dataset.note === n && p.dataset.suit === this.currentSuit);
+      if (pad) { pad.classList.add('active', 'triggered'); setTimeout(() => pad.classList.remove('active', 'triggered'), 150); }
+    }
+    if (keyToSuit[e.key]) { this.currentSuit = keyToSuit[e.key]; this.updateSuitIndicator(); }
+    if (e.key === ' ') { e.preventDefault(); this.toggleSequencer(); }
+    if (e.key === 'ArrowUp') { this.bpm = Math.min(200, this.bpm + 5); this.updateBPM(); }
+    if (e.key === 'ArrowDown') { this.bpm = Math.max(60, this.bpm - 5); this.updateBPM(); }
+  }
+  
+  updateBPM() {
+    document.getElementById('bpm-display').textContent = `${this.bpm} BPM`;
+    if (this.isPlaying) { this.stopSequencer(); this.startSequencer(); }
+  }
+  
+  updateSuitIndicator() {
+    const el = document.getElementById('suit-indicator');
+    el.textContent = this.currentSuit.toUpperCase();
+    el.style.color = SUIT_COLORS[this.currentSuit];
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => new NullSynth());
+</script>
+</body>
+</html>
