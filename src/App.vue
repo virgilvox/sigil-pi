@@ -20,25 +20,10 @@ function openSwitcher(): void {
   if (!globalStore.overlayMenuOpen) globalStore.openOverlayMenu()
 }
 
-// The handle opens the switcher on a DOUBLE tap (deliberate — a single stray tap,
-// or a tap meant for app UI that grazes the handle, won't yank you out of a game).
-// It sits in the margin below the stage so it doesn't overlap app controls.
-const armed = ref(false)
-let lastTap = 0
-let armTimer: ReturnType<typeof setTimeout> | null = null
+// A single tap on the handle opens the switcher. It sits in the margin below the
+// stage (not over app controls), so a plain tap is safe and quick.
 function onHandleTap(): void {
-  const now = Date.now()
-  if (now - lastTap < 450) {
-    lastTap = 0
-    armed.value = false
-    if (armTimer) { clearTimeout(armTimer); armTimer = null }
-    openSwitcher()
-  } else {
-    lastTap = now
-    armed.value = true
-    if (armTimer) clearTimeout(armTimer)
-    armTimer = setTimeout(() => { armed.value = false; lastTap = 0 }, 500)
-  }
+  openSwitcher()
 }
 
 // Keyboard shortcut for desktop testing only (no keyboard on the kiosk):
@@ -70,11 +55,9 @@ onUnmounted(() => {
       <button
         v-if="showHandle"
         class="menu-handle"
-        :class="{ armed }"
-        aria-label="Double-tap to open app switcher"
+        aria-label="Open app switcher"
         @pointerdown.prevent="onHandleTap"
       >
-        <span v-if="armed" class="handle-hint">TAP AGAIN</span>
         <span class="grip"></span>
       </button>
     </Transition>
@@ -123,21 +106,6 @@ onUnmounted(() => {
   transition: opacity 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
 }
 .menu-handle:active { opacity: 0.95; }
-.menu-handle.armed {
-  opacity: 1;
-  box-shadow: 0 -1px 10px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(190,178,235,0.5), 0 0 16px rgba(180,124,255,0.55);
-}
-.handle-hint {
-  position: absolute;
-  bottom: 30px;
-  font-family: 'Courier New', monospace;
-  font-size: 8px;
-  letter-spacing: 0.2em;
-  color: #d6c8ff;
-  white-space: nowrap;
-  text-shadow: 0 0 8px rgba(180,124,255,0.6);
-  pointer-events: none;
-}
 .grip {
   width: 40px;
   height: 4px;
