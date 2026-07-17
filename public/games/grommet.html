@@ -32,7 +32,11 @@
     color:var(--ink);
     background:radial-gradient(130% 130% at 50% 30%, #FDF8FF 0%, #F1EAFF 60%, #ECE6FF 100%);
     overflow:hidden; -webkit-user-select:none; user-select:none;
-    touch-action:none; overscroll-behavior:none;
+    /* pan-y (not none) so the settings sheet can finger-scroll — an ancestor's
+       touch-action:none would block descendant scrolling in Chromium. The view
+       swipe is touchstart/touchend based, so it's unaffected; pinch-zoom and
+       double-tap stay disabled. */
+    touch-action:pan-y; overscroll-behavior:none;
   }
   #stage{ position:fixed; inset:0; display:grid; place-items:center; }
   #circle{
@@ -690,24 +694,29 @@ function buildGraph(){
   A.filter.connect(A.master); A.master.connect(c.destination);
   const mk=(freq,type,g)=>{ const o=c.createOscillator(); o.type=type; o.frequency.value=freq;
     const gg=c.createGain(); gg.gain.value=g; o.connect(gg); gg.connect(A.filter); o.start(); return {o,gg}; };
+  // add a mid-octave voice so the drone is audible on small Pi speakers (110Hz
+  // alone barely reproduces), then lean on the master for overall level.
   mk(110,'sine',0.5);
-  A.osc2=mk(164.81,'sine',0.32).o;
-  mk(220,'triangle',0.12);
-  A.shimmerGain=mk(330,'sine',0.02).gg;
+  A.osc2=mk(164.81,'sine',0.34).o;
+  mk(220,'triangle',0.18);
+  mk(329.63,'sine',0.12);
+  A.shimmerGain=mk(440,'sine',0.03).gg;
 }
+const MASTER=0.34;                     // overall ambient level (was ~0.10 → too quiet)
 function updateAudio(){
   if(!A.ctx || !S.audioOn) return;
   const now=A.ctx.currentTime, calmN=clamp(S.calm/100,0,1), focusN=clamp(S.focus/100,0,1);
-  A.filter.frequency.setTargetAtTime(300+calmN*2200+focusN*400, now, 0.3);
-  A.master.gain.setTargetAtTime(0.10*(0.7+0.3*S.breath), now, 0.2);
-  A.shimmerGain.gain.setTargetAtTime(0.02+0.06*clamp(S.band.gamma*3,0,1), now, 0.4);
+  // keep the floor high enough that the mid voices always come through
+  A.filter.frequency.setTargetAtTime(700+calmN*2200+focusN*500, now, 0.3);
+  A.master.gain.setTargetAtTime(MASTER*(0.7+0.3*S.breath), now, 0.2);
+  A.shimmerGain.gain.setTargetAtTime(0.03+0.09*clamp(S.band.gamma*3,0,1), now, 0.4);
   A.osc2.detune.setTargetAtTime(Math.sin(now*0.2)*8, now, 0.5);
 }
 async function enableAudio(){
   try{
     if(!A.ctx){ const AC=window.AudioContext||window.webkitAudioContext; if(!AC){ toast('Audio not supported here.'); return; } A.ctx=new AC(); buildGraph(); }
     await A.ctx.resume(); S.audioOn=true;
-    A.master.gain.setTargetAtTime(0.10, A.ctx.currentTime, 0.4);
+    A.master.gain.setTargetAtTime(MASTER, A.ctx.currentTime, 0.4);
     setSound(true);
   }catch(e){ toast('Audio unavailable.'); S.audioOn=false; setSound(false); }
 }
