@@ -20,6 +20,27 @@ function openSwitcher(): void {
   if (!globalStore.overlayMenuOpen) globalStore.openOverlayMenu()
 }
 
+// The handle opens the switcher on a DOUBLE tap (deliberate — a single stray tap,
+// or a tap meant for app UI that grazes the handle, won't yank you out of a game).
+// It sits in the margin below the stage so it doesn't overlap app controls.
+const armed = ref(false)
+let lastTap = 0
+let armTimer: ReturnType<typeof setTimeout> | null = null
+function onHandleTap(): void {
+  const now = Date.now()
+  if (now - lastTap < 450) {
+    lastTap = 0
+    armed.value = false
+    if (armTimer) { clearTimeout(armTimer); armTimer = null }
+    openSwitcher()
+  } else {
+    lastTap = now
+    armed.value = true
+    if (armTimer) clearTimeout(armTimer)
+    armTimer = setTimeout(() => { armed.value = false; lastTap = 0 }, 500)
+  }
+}
+
 // Keyboard shortcut for desktop testing only (no keyboard on the kiosk):
 // m / Escape toggles the switcher.
 function onKey(e: KeyboardEvent): void {
@@ -49,9 +70,11 @@ onUnmounted(() => {
       <button
         v-if="showHandle"
         class="menu-handle"
-        aria-label="Open app switcher"
-        @pointerdown.prevent="openSwitcher"
+        :class="{ armed }"
+        aria-label="Double-tap to open app switcher"
+        @pointerdown.prevent="onHandleTap"
       >
+        <span v-if="armed" class="handle-hint">TAP AGAIN</span>
         <span class="grip"></span>
       </button>
     </Transition>
@@ -70,54 +93,57 @@ onUnmounted(() => {
   background: #000;
 }
 
-/* Pill near the bottom of the round panel — the always-on switcher trigger (also
-   works over iframe drop-in games). Raised off the very edge (hardest place to
-   reach on round glass), enlarged, with a generous transparent hit-slop so a
-   near-miss still opens it. */
+/* Pill in the margin at the very bottom of the round panel — below the 720 stage
+   so it never overlaps an app's own bottom controls. Double-tap to open (see
+   onHandleTap); the first tap arms it and shows a hint. Kept short so it stays in
+   the bezel margin. */
 .menu-handle {
   position: fixed;
   left: 50%;
-  bottom: calc(50% - min(50vw, 50vh) * var(--game-scale, 0.92) + 30px);
+  bottom: calc(50% - min(50vw, 50vh) * var(--game-scale, 0.92) + 3px);
   transform: translateX(-50%);
   z-index: 550;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  width: 104px;
-  height: 40px;
-  padding: 14px 22px;   /* transparent hit-slop around the visible pill */
+  justify-content: flex-end;
+  gap: 4px;
+  width: 92px;
+  height: 22px;
+  padding: 4px 16px 0;
   box-sizing: content-box;
   border: none;
-  background: none;
+  border-radius: 13px 13px 3px 3px;
+  background: rgba(14, 12, 26, 0.62);
+  box-shadow: 0 -1px 10px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(190, 178, 235, 0.22);
   cursor: pointer;
   touch-action: manipulation;
-  opacity: 0.85;
-  transition: opacity 0.2s ease, transform 0.15s ease;
-}
-/* the visible pill */
-.menu-handle::before {
-  content: '';
-  position: absolute;
-  width: 104px;
-  height: 40px;
-  border-radius: 20px;
-  background: rgba(14, 12, 26, 0.72);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(190, 178, 235, 0.28);
   backdrop-filter: blur(3px);
+  opacity: 0.6;
+  transition: opacity 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
 }
-
-.menu-handle:active {
+.menu-handle:active { opacity: 0.95; }
+.menu-handle.armed {
   opacity: 1;
-  transform: translateX(-50%) translateY(-1px) scale(0.96);
+  box-shadow: 0 -1px 10px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(190,178,235,0.5), 0 0 16px rgba(180,124,255,0.55);
 }
-
+.handle-hint {
+  position: absolute;
+  bottom: 30px;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  color: #d6c8ff;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(180,124,255,0.6);
+  pointer-events: none;
+}
 .grip {
-  position: relative;
-  width: 46px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(216, 211, 228, 0.85);
-  box-shadow: 0 0 10px rgba(190, 178, 235, 0.5);
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(216, 211, 228, 0.8);
+  box-shadow: 0 0 8px rgba(190, 178, 235, 0.4);
 }
 
 .handle-fade-enter-active,
