@@ -16,7 +16,9 @@ const surfRef = ref<HTMLElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let raf = 0
 
-const OUTER_RC = 214, INNER_RC = 138, BAND = 68, HUB_R = 92
+// Big two-octave wheel filling the disc; only the scope/tabs (top) and a slim
+// control zone (hub + corners + bottom) sit outside the keys.
+const OUTER_RC = 256, INNER_RC = 164, BAND = 82, HUB_R = 104
 const BASE_OCT = 4
 const active = new Map<number, { key: string; cell: string; midi: number }>()
 const lit = ref(new Set<string>())
@@ -49,6 +51,8 @@ function cellAt(x: number, y: number): { ring: number; wedge: number; t: number 
 function onDown(e: PointerEvent): void {
   e.preventDefault()
   const { x, y } = toLocal(e)
+  // center hub = open the sound browser
+  if (distFromCenter(x, y) < HUB_R) { showBrowse.value = true; return }
   const cell = cellAt(x, y)
   if (!cell) return
   const midi = midiFor(cell.ring, cell.wedge)
@@ -116,12 +120,14 @@ function draw(): void {
   ctx.fillStyle = hub; ctx.fill()
   ctx.strokeStyle = withAlpha(c, 0.5); ctx.lineWidth = 1.5; ctx.stroke()
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 15px "Courier New", monospace'
-  ctx.fillText(fit(store.playLabel, 14), CENTER, CENTER - 12)
+  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 16px "Courier New", monospace'
+  ctx.fillText(fit(store.playLabel, 15), CENTER, CENTER - 18)
   ctx.font = '9px "Courier New", monospace'; ctx.fillStyle = withAlpha(c, 0.8)
-  ctx.fillText(store.playSub, CENTER, CENTER + 4)
-  ctx.font = '9px "Courier New", monospace'; ctx.fillStyle = withAlpha('#d8d3e4', 0.55)
-  ctx.fillText(lastNote.value || `${store.scaleRoot} ${store.scaleName}`, CENTER, CENTER + 18)
+  ctx.fillText(store.playSub, CENTER, CENTER - 2)
+  ctx.font = '10px "Courier New", monospace'; ctx.fillStyle = withAlpha('#d8d3e4', 0.6)
+  ctx.fillText(lastNote.value || `${store.scaleRoot} ${store.scaleName}`, CENTER, CENTER + 14)
+  ctx.font = '8px "Courier New", monospace'; ctx.fillStyle = withAlpha(c, 0.55)
+  ctx.fillText('TAP TO BROWSE', CENTER, CENTER + 30)
 }
 function fit(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
@@ -150,23 +156,18 @@ function browseFamily(fam: InstrumentFamily): void {
       @pointerdown="onDown" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onUp"
     ></div>
 
-    <!-- bottom margin: sound selector bar (clear of the pad) -->
-    <div class="sound-bar" :style="{ '--c': store.playColor }">
-      <button class="nav" @click="cycleSound(-1)">‹</button>
-      <button class="sound" @click="showBrowse = true">
-        <span class="dot"></span>
-        <span class="nm">{{ store.playLabel }}</span>
-        <span class="sub">{{ store.playSub }}</span>
-      </button>
-      <button class="nav" @click="cycleSound(1)">›</button>
-    </div>
-    <div class="ctl-bar">
+    <!-- performance toggles tucked into the wasted lower corners -->
+    <button class="corner cl tog" :class="{ on: store.sustainOn }" @click="store.toggleSustain()">SUS</button>
+    <button class="corner cr tog" :class="{ on: store.legatoOn, dis: !store.legatoCapable }"
+      :disabled="!store.legatoCapable" @click="store.toggleLegato()">LEG</button>
+
+    <!-- slim bottom bar: sound cycle + octave -->
+    <div class="ctl-bar" :style="{ '--c': store.playColor }">
+      <button class="c nav" @click="cycleSound(-1)">‹</button>
       <button class="c" @click="store.shiftOctave(-1)">OCT −</button>
       <span class="oct">{{ store.octave >= 0 ? '+' : '' }}{{ store.octave }}</span>
       <button class="c" @click="store.shiftOctave(1)">OCT +</button>
-      <button class="c tog" :class="{ on: store.sustainOn }" @click="store.toggleSustain()">SUS</button>
-      <button class="c tog" :class="{ on: store.legatoOn, dis: !store.legatoCapable }"
-        :disabled="!store.legatoCapable" @click="store.toggleLegato()">LEG</button>
+      <button class="c nav" @click="cycleSound(1)">›</button>
     </div>
 
     <!-- browser -->
@@ -205,20 +206,19 @@ function browseFamily(fam: InstrumentFamily): void {
 .cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .surface { position: absolute; inset: 0; z-index: 1; touch-action: none; }
 
-.sound-bar { position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); z-index: 10;
+.ctl-bar { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10;
   display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; }
-.sound-bar .nav { background: rgba(20,16,40,0.75); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; border-radius: 9px; cursor: pointer; padding: 8px 11px; font-size: 15px; }
-.sound { display: flex; align-items: center; gap: 8px; background: rgba(20,16,40,0.8); border: 1px solid var(--c); border-radius: 11px; cursor: pointer; padding: 7px 16px; min-width: 168px; justify-content: center; box-shadow: 0 0 16px color-mix(in srgb, var(--c) 32%, transparent); }
-.sound .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
-.sound .nm { color: #f4f1ea; font-size: 12px; letter-spacing: 0.12em; }
-.sound .sub { color: var(--c); font-size: 8px; letter-spacing: 0.14em; }
-
-.ctl-bar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 10;
-  display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; }
-.ctl-bar .c { background: rgba(20,16,40,0.75); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.85); border-radius: 8px; cursor: pointer; padding: 6px 9px; font-size: 9px; letter-spacing: 0.1em; }
+.ctl-bar .c { background: rgba(20,16,40,0.8); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.85); border-radius: 8px; cursor: pointer; padding: 7px 10px; font-size: 9px; letter-spacing: 0.1em; }
+.ctl-bar .nav { color: var(--c); border-color: color-mix(in srgb, var(--c) 45%, transparent); font-size: 13px; padding: 6px 11px; }
 .ctl-bar .oct { color: #f4f1ea; font-size: 11px; min-width: 22px; text-align: center; }
-.ctl-bar .tog.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 10px rgba(95,224,138,0.5); }
-.ctl-bar .tog.dis { opacity: 0.3; cursor: not-allowed; }
+
+.corner { position: absolute; z-index: 10; bottom: 128px; width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(20,16,40,0.8); border: 1px solid rgba(190,178,235,0.28); color: rgba(216,211,228,0.75);
+  font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 0.06em; cursor: pointer; }
+.corner.cl { left: 118px; }
+.corner.cr { right: 118px; }
+.corner.tog.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 12px rgba(95,224,138,0.55); }
+.corner.tog.dis { opacity: 0.3; cursor: not-allowed; }
 
 .sheet-bg { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(6,5,14,0.85); backdrop-filter: blur(3px); border-radius: 50%; }
 .sheet { width: 76%; max-height: 70%; overflow-y: auto; background: rgba(20,16,40,0.96); border: 1px solid rgba(190,178,235,0.25); border-radius: 18px; padding: 14px; color: #d8d3e4; font-family: 'Courier New', monospace; }
