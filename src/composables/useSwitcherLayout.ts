@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { computed, watch, type Ref } from 'vue'
 import { useCircularLayout } from '@/composables/useCircularLayout'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -46,6 +46,9 @@ function planRings(count: number): number[] {
 export function useSwitcherLayout<T>(items: Ref<T[]>, page: Ref<number>, size = 720) {
   const { polarToCartesian } = useCircularLayout(size)
   const pageCount = computed(() => Math.max(1, Math.ceil(items.value.length / PER_PAGE)))
+
+  // Keep the page in range if the catalog shrinks (e.g. a drop-in disappears).
+  watch(pageCount, (pc) => { if (page.value > pc - 1) page.value = pc - 1 })
 
   const placed = computed<PlacedNode<T>[]>(() => {
     const start = page.value * PER_PAGE

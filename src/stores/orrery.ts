@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
-import type { Bellows } from 'bellowsjs'
+import type { Bellows, Instrument } from 'bellowsjs'
 import { useBellows, type TrackId } from '@/composables/useBellows'
 import { RINGS } from '@/components/orrery/geometry'
 
@@ -114,6 +114,36 @@ export const useOrreryStore = defineStore('orrery', () => {
   // Non-reactive engine wrapper (holds Bellows in a closure).
   const engine = useBellows({ seed: 'orrery', bpm: 112 })
 
+  // Shared audio graph nodes, created once per boot. bellowsjs has no way to free
+  // an Instrument or bus, so buses are reused and voices are cached per
+  // (track, soundIndex) — swapping a sound reuses the cached voice instead of
+  // leaking a new channel on every cycle. All cleared on dispose/re-boot.
+  let drumBus: ReturnType<Bellows['bus']> | null = null
+  let echoBus: ReturnType<Bellows['bus']> | null = null
+  const voiceCache = new Map<string, Instrument>()
+
+  /** Cached-or-new instrument for a track's current sound, with routing applied once. */
+  function voiceFor(bell: Bellows, tr: Track): Instrument {
+    const key = `${tr.id}:${tr.soundIndex}`
+    const cached = voiceCache.get(key)
+    if (cached) return cached
+    const cat = soundCategory(tr.id)
+    const opt = SOUND_OPTIONS[cat][tr.soundIndex] || SOUND_OPTIONS[cat][0]
+    const inst = bell.voice(opt.engineId, opt.params, opt.poly ? { polyphony: opt.poly } : undefined)
+    if (cat === 'kick' || cat === 'snare' || cat === 'hat') {
+      if (drumBus) inst.send(drumBus, 0.3)
+    } else if (tr.id === 'lead') {
+      inst.gain(0.7)
+      if (echoBus) inst.send(echoBus, 0.28)
+    } else if (tr.id === 'pluck') {
+      inst.gain(0.75)
+    } else if (tr.id === 'bass') {
+      inst.gain(0.95)
+    }
+    voiceCache.set(key, inst)
+    return inst
+  }
+
   const tracks = reactive<Track[]>(defaultTracks())
   const bpm = engine.bpm
   const swing = ref(0)
@@ -128,27 +158,11 @@ export const useOrreryStore = defineStore('orrery', () => {
   // Build the instrument graph once, right after boot.
   function buildKit(bell: Bellows): void {
     bell.masterFx(['limiter', { ceiling: -1 }])
-
-    // Drum glue bus + a little room.
-    const drumBus = bell.bus([['plate', { mix: 0.14, decay: 0.4 }]], { level: 0.9 })
-    // Lead echo bus.
-    const echo = bell.bus([['tapeDelay', { time: 0.33, feedback: 0.3, mix: 0.28 }]], { level: 0.8 })
-
-    tracks.forEach((tr) => {
-      const cat = soundCategory(tr.id)
-      const opt = SOUND_OPTIONS[cat][tr.soundIndex] || SOUND_OPTIONS[cat][0]
-      const inst = bell.voice(opt.engineId, opt.params, opt.poly ? { polyphony: opt.poly } : undefined)
-      if (cat === 'kick' || cat === 'snare' || cat === 'hat') {
-        inst.send(drumBus, 0.3)
-      }
-      if (tr.id === 'lead') {
-        inst.gain(0.7)
-        inst.send(echo, 0.28)
-      }
-      if (tr.id === 'pluck') inst.gain(0.75)
-      if (tr.id === 'bass') inst.gain(0.95)
-      engine.registerVoice(tr.id, inst)
-    })
+    // Shared buses, created once. drumBus = glue + room; echoBus = lead delay.
+    drumBus = bell.bus([['plate', { mix: 0.14, decay: 0.4 }]], { level: 0.9 })
+    echoBus = bell.bus([['tapeDelay', { time: 0.33, feedback: 0.3, mix: 0.28 }]], { level: 0.8 })
+    voiceCache.clear()
+    tracks.forEach(tr => engine.registerVoice(tr.id, voiceFor(bell, tr)))
   }
 
   // The ~8 Hz clock callback: read the plain pattern, schedule notes at absolute t.
@@ -238,15 +252,8 @@ export const useOrreryStore = defineStore('orrery', () => {
     const bell = engine.bellows()
     if (!bell) return
     const tr = tracks[t]
-    const cat = soundCategory(tr.id)
-    const opt = SOUND_OPTIONS[cat][tr.soundIndex]
-    engine.voice(tr.id)?.allOff()
-    const inst = bell.voice(opt.engineId, opt.params, opt.poly ? { polyphony: opt.poly } : undefined)
-    if (cat === 'kick' || cat === 'snare' || cat === 'hat') inst.send(bell.bus([['plate', { mix: 0.14, decay: 0.4 }]], { level: 0.9 }), 0.3)
-    if (tr.id === 'lead') inst.gain(0.7)
-    if (tr.id === 'pluck') inst.gain(0.75)
-    if (tr.id === 'bass') inst.gain(0.95)
-    engine.registerVoice(tr.id, inst)
+    engine.voice(tr.id)?.allOff()                 // silence the outgoing voice
+    engine.registerVoice(tr.id, voiceFor(bell, tr)) // reuse cached or build once, routed
   }
 
   function currentSoundLabel(t: number): string {
@@ -277,11 +284,14 @@ export const useOrreryStore = defineStore('orrery', () => {
         data.tracks.forEach((td: Partial<Track>, i: number) => {
           const tr = tracks[i]
           if (!tr || !Array.isArray(td.steps)) return
-          tr.soundIndex = td.soundIndex ?? 0
+          const opts = SOUND_OPTIONS[soundCategory(tr.id)].length
+          tr.soundIndex = Math.max(0, Math.min(opts - 1, td.soundIndex ?? 0))
           tr.muted = !!td.muted
           tr.len = td.len ?? 16
           td.steps.forEach((s, j) => { if (tr.steps[j]) Object.assign(tr.steps[j], s) })
         })
+        // Re-point live voices to the restored sounds (load runs after boot).
+        if (engine.bellows()) tracks.forEach((_, i) => rebuildVoice(i))
       }
       gridVersion.value++
       return true
@@ -292,7 +302,15 @@ export const useOrreryStore = defineStore('orrery', () => {
     gridVersion.value++
   }
 
-  function dispose(): void { engine.teardown() }
+  function dispose(): void {
+    engine.teardown()
+    // Reset the singleton store's session UI state so a fresh mount starts clean.
+    voiceCache.clear()
+    drumBus = null
+    echoBus = null
+    currentTick.value = 0
+    selectedTrack.value = 0
+  }
 
   return {
     tracks, bpm, swing, ready, playing, selectedTrack, currentTick, gridVersion, anySolo,

@@ -16,6 +16,7 @@ const input = useOrreryInput()
 const started = ref(false)
 const showPanel = ref(false)
 const surfaceRef = ref<HTMLElement | null>(null)
+let alive = true                          // guards the async boot against unmount
 
 const bar = computed(() => Math.floor(store.currentTick / 16) + 1)
 const beat = computed(() => Math.floor((store.currentTick % 16) / 4) + 1)
@@ -23,9 +24,10 @@ const beat = computed(() => Math.floor((store.currentTick % 16) / 4) + 1)
 async function start(): Promise<void> {
   try {
     await store.boot()
+    if (!alive) { store.dispose(); return } // unmounted mid-boot → tear the engine back down
     started.value = true
-    await nextTick()                       // wait for the surface to mount
-    if (surfaceRef.value) input.attach(surfaceRef.value)
+    await nextTick()                        // wait for the surface to mount
+    if (alive && surfaceRef.value) input.attach(surfaceRef.value)
   } catch (e) {
     console.error('[orrery] boot failed', e)
   }
@@ -35,6 +37,7 @@ onMounted(() => {
   globalStore.setCurrentGame('orrery')
 })
 onUnmounted(() => {
+  alive = false
   input.detach()
   store.dispose()
   globalStore.setCurrentGame(null)

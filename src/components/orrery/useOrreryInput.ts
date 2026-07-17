@@ -147,6 +147,18 @@ export function useOrreryInput() {
       store.toggleStep(downCell.t, downCell.step); navigator.vibrate?.(10)
     }
 
+    reset()
+  }
+
+  /** Abort the gesture without committing a tap/toggle (e.g. pointercancel). */
+  function onCancel(e: PointerEvent): void {
+    if (e.pointerId !== pointerId) return
+    clearLong()
+    try { el!.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    reset()
+  }
+
+  function reset(): void {
     mode = 'idle'
     pointerId = -1
     downCell = null
@@ -158,14 +170,14 @@ export function useOrreryInput() {
     element.addEventListener('pointerdown', onDown, { passive: false })
     element.addEventListener('pointermove', onMove, { passive: false })
     element.addEventListener('pointerup', onUp)
-    element.addEventListener('pointercancel', onUp)
+    element.addEventListener('pointercancel', onCancel)
   }
   function detach(): void {
     if (!el) return
     el.removeEventListener('pointerdown', onDown)
     el.removeEventListener('pointermove', onMove)
     el.removeEventListener('pointerup', onUp)
-    el.removeEventListener('pointercancel', onUp)
+    el.removeEventListener('pointercancel', onCancel)
     clearLong()
     el = null
   }

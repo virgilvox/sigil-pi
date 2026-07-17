@@ -77,6 +77,10 @@ export function hitTest(px: number, py: number, lens: number[]): HitResult {
     }
   }
 
-  if (dist <= TICK_R + 12) return { kind: 'gauge', dist, angle: a }
+  // The BPM gauge is only the annulus beyond the outermost ring; inter-ring and
+  // hub-to-ring gaps are inert (avoid stray BPM scrubs when a tap lands in a gap).
+  if (dist > ringOuter(RINGS[0].rc) && dist <= TICK_R + 12) {
+    return { kind: 'gauge', dist, angle: a }
+  }
   return { kind: 'outside', dist, angle: a }
 }
