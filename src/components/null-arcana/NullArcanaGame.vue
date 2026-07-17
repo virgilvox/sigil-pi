@@ -12,20 +12,31 @@ const globalStore = useGlobalStore()
 const store = useNullArcanaStore()
 const audio = useNullArcanaAudio()
 
-// Computed: arrange sigils in a ring
+// Arrange sigils in three concentric rings that fill the screen (matching the
+// original reference's dense scatter, rather than a single sparse ring).
+const RINGS = [
+  { count: 12, radius: 288, offset: 0 },
+  { count: 12, radius: 205, offset: 15 },
+  { count: 12, radius: 122, offset: 0 }
+]
 const sigilRing = computed(() => {
   const sigils = store.availableSigils
-  const count = sigils.length
-  const radius = 220
-  const cx = 360
-  const cy = 360
-
-  return sigils.map((sigil, i) => {
-    const angle = (i / count) * Math.PI * 2 - Math.PI / 2
-    const x = cx + Math.cos(angle) * radius
-    const y = cy + Math.sin(angle) * radius
-    return { sigil, x, y, angle }
-  })
+  const cx = 360, cy = 360
+  const out: { sigil: typeof sigils[number]; x: number; y: number; angle: number }[] = []
+  let idx = 0
+  for (const ring of RINGS) {
+    for (let i = 0; i < ring.count && idx < sigils.length; i++) {
+      const angle = (i / ring.count) * Math.PI * 2 - Math.PI / 2 + (ring.offset * Math.PI) / 180
+      out.push({
+        sigil: sigils[idx],
+        x: cx + Math.cos(angle) * ring.radius,
+        y: cy + Math.sin(angle) * ring.radius,
+        angle
+      })
+      idx++
+    }
+  }
+  return out
 })
 
 // Get suit color
