@@ -89,6 +89,17 @@ export const BAKED_GAMES: BakedGame[] = [
     component: () => import('@/components/synth-lab/SynthLabGame.vue')
   },
   {
+    id: 'composer',
+    name: 'COMPOSER',
+    route: '/composer',
+    color: '#b47cff',
+    description: 'GENERATIVE ENSEMBLE',
+    source: 'baked',
+    order: 44,
+    icon: '✶',
+    component: () => import('@/components/composer/ComposerGame.vue')
+  },
+  {
     id: 'carrom',
     name: 'CARROM',
     route: '/carrom',

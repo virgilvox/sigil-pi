@@ -221,8 +221,9 @@ export class Composer {
   readonly drawQueue: DrawItem[] = []
   private readonly b: Bellows
   private readonly piece: PieceState
+  private seed: string
   private scale: Scale
-  private readonly prog: number[]
+  private prog: number[]
   private chordLabels: string[]
   private readonly delayBus: BusHandle
   private readonly verbBus: BusHandle
@@ -237,12 +238,17 @@ export class Composer {
   private unsubscribe: (() => void) | null = null
   private disposed = false
 
-  constructor(b: Bellows, piece: PieceState) {
+  // Fold the composition seed into every rng label so a new seed reshuffles the
+  // whole piece WITHOUT re-booting bellows or rebuilding (undisposable) voices.
+  private rng(label: string) { return this.b.rng(this.seed + ':' + label) }
+
+  constructor(b: Bellows, piece: PieceState, seed: string) {
     this.b = b
     this.piece = piece
+    this.seed = seed
     const mood = piece.mood
     this.scale = new Scale(piece.root, piece.scaleName)
-    this.prog = buildProgression(b.rng('prog:' + mood), PROG_BARS)
+    this.prog = buildProgression(this.rng('prog:' + mood), PROG_BARS)
     this.chordLabels = this.prog.map(d => this.labelChord(d))
 
     this.delayBus = b.bus([['delay', {
@@ -256,25 +262,37 @@ export class Composer {
       if (tr.kind === 'kit') this.buildKit(tr)
       else this.buildMelodic(tr)
     }
+    this.buildScore()
+    this.unsubscribe = b.clock.at('16n', (t, step) => this.tick(t, step))
+  }
 
-    const dr = b.rng('drums:' + mood)
-    this.kickPat = b.euclid(STEPS, 2 + dr.int(3), 0)
+  /** (Re)derive the generative score (progression, drum + melody lanes) from the
+      current seed + mood. Reuses existing voices/buses — no leak on re-compose. */
+  private buildScore(): void {
+    const mood = this.piece.mood
+    this.prog = buildProgression(this.rng('prog:' + mood), PROG_BARS)
+    this.chordLabels = this.prog.map(d => this.labelChord(d))
+    const dr = this.rng('drums:' + mood)
+    this.kickPat = this.b.euclid(STEPS, 2 + dr.int(3), 0)
     this.snarePat = new Array<number>(STEPS).fill(0)
     this.snarePat[4] = 1; this.snarePat[12] = 1
     if (dr.chance(0.3)) this.snarePat[14] = 1
     if (dr.chance(0.15)) this.snarePat[7] = 1
-
-    for (const tr of piece.tracks) {
+    this.lanes.clear()
+    for (const tr of this.piece.tracks) {
       if (tr.role === 'melody' || tr.role === 'texture' || tr.role === 'bass') {
         this.lanes.set(tr.id, {
           track: tr,
-          matrix: buildStepwiseMatrix(STATE_IDX, b.rng('mx:' + tr.id)),
-          state: 4 + b.rng('st:' + tr.id).int(7)
+          matrix: buildStepwiseMatrix(STATE_IDX, this.rng('mx:' + tr.id)),
+          state: 4 + this.rng('st:' + tr.id).int(7)
         })
       }
     }
-    this.unsubscribe = b.clock.at('16n', (t, step) => this.tick(t, step))
+    this.evoCount = 0; this.lastEvoBar = 0; this.prevVoicing = []
   }
+
+  /** Reshuffle the piece to a new seed (voices/buses untouched). */
+  reseed(seed: string): void { this.seed = seed; this.buildScore() }
 
   private buildMelodic(tr: TrackState): void {
     const params: Record<string, number> = tr.kind === 'pad' ? padParams(tr.engine) : {}
@@ -360,7 +378,7 @@ export class Composer {
       this.evoCount++
       for (const lane of this.lanes.values()) {
         if (lane.track.role === 'bass') continue
-        lane.matrix = buildStepwiseMatrix(STATE_IDX, this.b.rng('mx:' + lane.track.id + ':evo' + this.evoCount))
+        lane.matrix = buildStepwiseMatrix(STATE_IDX, this.rng('mx:' + lane.track.id + ':evo' + this.evoCount))
       }
     }
 
@@ -379,10 +397,10 @@ export class Composer {
       if (tr.mute) continue
       if (tr.kind === 'kit') { this.tickKit(tr, s, t); continue }
       if (!tr.pattern[s]) continue
-      if (!this.b.rng('gate:' + tr.id).chance(tr.density)) continue
+      if (!this.rng('gate:' + tr.id).chance(tr.density)) continue
       const inst = this.insts.get(tr.id); if (!inst) continue
-      const vel = 0.5 + this.b.rng('vel:' + tr.id).range(0, 0.4)
-      const at = Math.max(0, t + this.b.rng('hum:' + tr.id).range(-0.003, 0.003))
+      const vel = 0.5 + this.rng('vel:' + tr.id).range(0, 0.4)
+      const at = Math.max(0, t + this.rng('hum:' + tr.id).range(-0.003, 0.003))
       try {
         if (tr.kind === 'pad') {
           const voicing = this.voiceChord(chord)
@@ -391,7 +409,7 @@ export class Composer {
         }
         const midi = this.nextMidi(tr, chord, chordSet, len)
         if (midi === null) continue
-        const dr = this.b.rng('dur:' + tr.id)
+        const dr = this.rng('dur:' + tr.id)
         let dur: number
         if (tr.role === 'bass') dur = 0.4
         else if (tr.role === 'texture') dur = dr.chance(0.4) ? 2 : 1
@@ -403,7 +421,7 @@ export class Composer {
 
   private nextMidi(tr: TrackState, chord: number, chordSet: Set<number>, len: number): number | null {
     if (tr.role === 'bass') {
-      const r = this.b.rng('bassdeg')
+      const r = this.rng('bassdeg')
       let degree = chord
       if (r.chance(0.14)) degree += 4
       else if (r.chance(0.1)) degree += len
@@ -411,13 +429,13 @@ export class Composer {
     }
     const lane = this.lanes.get(tr.id)
     if (!lane) return null
-    lane.state = weightedWalk(lane.matrix, lane.state, this.b.rng('walk:' + tr.id), chordSet, 2.6)
+    lane.state = weightedWalk(lane.matrix, lane.state, this.rng('walk:' + tr.id), chordSet, 2.6)
     return this.scale.degreeToMidi(lane.state, clamp(tr.oct, 1, 7))
   }
 
   private tickKit(tr: TrackState, s: number, t: number): void {
     if (!this.kit) return
-    const kr = this.b.rng('kit')
+    const kr = this.rng('kit')
     try {
       if (this.kickPat[s] && kr.chance(0.97)) this.kit.kick.note(36, { at: t, dur: 0.25, vel: 0.85 + kr.range(0, 0.15) })
       if (this.snarePat[s] && kr.chance(0.95)) this.kit.snare.note(38, { at: t, dur: 0.25, vel: 0.7 + kr.range(0, 0.25) })
@@ -431,7 +449,7 @@ export class Composer {
   }
 
   private voiceChord(chord: number): number[] {
-    const r = this.b.rng('pad')
+    const r = this.rng('pad')
     const degs = r.chance(0.35) ? [0, 2, 4, 6] : [0, 2, 4]
     const midis = degs.map(k => this.scale.degreeToMidi(chord + k, 3))
     try {

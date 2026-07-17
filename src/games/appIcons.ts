@@ -18,6 +18,8 @@ export const APP_ICONS: Record<string, string> = {
   'orrery': '<circle cx="50" cy="50" r="7" fill="currentColor"/><circle cx="50" cy="50" r="22"/><circle cx="50" cy="50" r="36"/><circle cx="72" cy="50" r="4" fill="currentColor"/><circle cx="30" cy="36" r="3.5" fill="currentColor"/>',
   // oscilloscope screen + trace
   'synth-lab': '<rect x="16" y="28" width="68" height="44" rx="6"/><path d="M24 50 Q34 33 44 50 Q54 67 64 50 Q70 42 76 50"/>',
+  // generative ensemble — concentric track rings with note nodes
+  'composer': '<circle cx="50" cy="50" r="12"/><circle cx="50" cy="50" r="26"/><circle cx="50" cy="50" r="40"/><circle cx="50" cy="24" r="4" fill="currentColor"/><circle cx="76" cy="50" r="4" fill="currentColor"/><circle cx="32" cy="68" r="3.5" fill="currentColor"/><circle cx="50" cy="62" r="3" fill="currentColor"/>',
   // carrom board with striker + corner pockets
   'carrom': '<rect x="20" y="20" width="60" height="60" rx="3"/><circle cx="50" cy="50" r="8"/><circle cx="27" cy="27" r="4.5"/><circle cx="73" cy="27" r="4.5"/><circle cx="27" cy="73" r="4.5"/><circle cx="73" cy="73" r="4.5"/>',
   // spinning prize wheel + hub
