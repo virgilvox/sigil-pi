@@ -8,9 +8,10 @@ import { withAlpha, stageGradient, engineColor } from '@/styles/palette'
 import CircularViewport from '@/components/core/CircularViewport.vue'
 import CRTOverlay from '@/components/core/CRTOverlay.vue'
 
-// A round-LCD translation of the bellows workbench generative composer: six
-// auto-generated voice tracks shown as concentric 16-step lamp rings, a
-// transport hub, mood + compose + evolve, and a per-track voice-strip sheet.
+// A round-LCD generative composer: six voice tracks are concentric 16-step
+// rings. TAP a step to place/remove a note, DRAG to paint (multi-touch — every
+// finger paints its own ring), HOLD a ring to open its voice strip. COMPOSE
+// rolls a whole new piece; DICE re-rolls the grooves; MOOD picks a preset.
 
 const globalStore = useGlobalStore()
 const store = useComposerStore()
@@ -44,22 +45,60 @@ async function start(): Promise<void> {
   } catch (e) { console.error('[composer] boot failed', e) }
 }
 
+// ── position a control on the top/bottom arc (deg: 0 = top, clockwise) ──
+function arc(deg: number, r: number): Record<string, string> {
+  const a = deg * Math.PI / 180
+  return { left: `${360 + Math.sin(a) * r}px`, top: `${360 - Math.cos(a) * r}px` }
+}
+
+// ── multi-touch step editing ────────────────────────────────────────
+interface Touch { track: string; paintOn: boolean; startStep: number; moved: boolean; long: ReturnType<typeof setTimeout> | null }
+const active = new Map<number, Touch>()
+
 function toLocal(e: PointerEvent): { x: number; y: number } {
   const r = surfRef.value!.getBoundingClientRect()
   return { x: (e.clientX - r.left) / r.width * 720, y: (e.clientY - r.top) / r.height * 720 }
 }
+function ringStepAt(x: number, y: number): { track: string; step: number } | null {
+  const d = distFromCenter(x, y)
+  let ri = -1, best = BAND / 2 + 5
+  RING_R.forEach((r, i) => { const g = Math.abs(d - r); if (g < best) { best = g; ri = i } })
+  if (ri < 0 || ri >= store.piece.tracks.length) return null
+  const step = Math.floor((angleFromTop(x, y) / (Math.PI * 2)) * STEPS) % STEPS
+  return { track: store.piece.tracks[ri].id, step }
+}
+
 function onDown(e: PointerEvent): void {
   e.preventDefault()
   const { x, y } = toLocal(e)
-  const d = distFromCenter(x, y)
-  if (d < HUB_R) { store.togglePlay(); return }
-  // which ring?
-  let best = -1, bestGap = 22
-  rings.value.forEach((rg, i) => { const g = Math.abs(d - rg.r); if (g < bestGap) { bestGap = g; best = i } })
-  if (best >= 0) {
-    const id = rings.value[best].track.id
-    store.selectTrack(store.selectedTrack === id ? null : id)
+  if (distFromCenter(x, y) < HUB_R) { store.togglePlay(); return }
+  const rs = ringStepAt(x, y); if (!rs) return
+  const t: Touch = { track: rs.track, paintOn: !store.stepOn(rs.track, rs.step), startStep: rs.step, moved: false, long: null }
+  if (active.size === 0) {
+    // single-finger hold → open that track's voice strip
+    t.long = setTimeout(() => { if (!t.moved) { store.selectTrack(rs.track); active.delete(e.pointerId); navigator.vibrate?.(12) } }, 400)
+  } else {
+    for (const o of active.values()) if (o.long) { clearTimeout(o.long); o.long = null }
   }
+  active.set(e.pointerId, t)
+}
+function onMove(e: PointerEvent): void {
+  const t = active.get(e.pointerId); if (!t) return
+  const { x, y } = toLocal(e)
+  const rs = ringStepAt(x, y)
+  if (!t.moved) {
+    if (!rs || rs.step === t.startStep) return   // not a drag yet
+    t.moved = true
+    if (t.long) { clearTimeout(t.long); t.long = null }
+    store.paintStep(t.track, t.startStep, t.paintOn)
+  }
+  if (rs && rs.track === t.track) store.paintStep(t.track, rs.step, t.paintOn)
+}
+function onUp(e: PointerEvent): void {
+  const t = active.get(e.pointerId); if (!t) return
+  if (t.long) clearTimeout(t.long)
+  if (!t.moved) store.toggleStep(t.track, t.startStep)
+  active.delete(e.pointerId)
 }
 
 function draw(): void {
@@ -75,28 +114,23 @@ function draw(): void {
   for (const rg of rings.value) {
     const tr = rg.track
     const col = TRACK_COLOR[tr.id] ?? '#b9b3d0'
-    const sel = store.selectedTrack === tr.id
     for (let s = 0; s < STEPS; s++) {
       const a0 = indexAngle(s, STEPS) + gap, a1 = indexAngle(s + 1, STEPS) - gap
       const on = !!tr.pattern[s]
       const isNow = cur === s
       ringSector(ctx, rg.r, BAND, a0, a1)
       if (on && !tr.mute) {
-        ctx.fillStyle = withAlpha(col, isNow ? 1 : 0.5)
-        ctx.fill()
+        ctx.fillStyle = withAlpha(col, isNow ? 1 : 0.5); ctx.fill()
         ctx.shadowColor = col; ctx.shadowBlur = isNow ? 20 : 6; ctx.fill(); ctx.shadowBlur = 0
       } else {
-        ctx.fillStyle = on ? withAlpha(col, 0.14) : (s % 4 === 0 ? 'rgba(190,178,235,0.10)' : 'rgba(190,178,235,0.04)')
+        ctx.fillStyle = on ? withAlpha(col, 0.16) : (s % 4 === 0 ? 'rgba(190,178,235,0.12)' : 'rgba(190,178,235,0.05)')
         ctx.fill()
+        // thin outline so empty cells read as tappable slots
+        ctx.strokeStyle = withAlpha(col, on ? 0.4 : 0.12); ctx.lineWidth = 1; ctx.stroke()
       }
-      if (isNow && !on) { ctx.strokeStyle = 'rgba(244,241,234,0.4)'; ctx.lineWidth = 1; ctx.stroke() }
+      if (isNow && !on) { ctx.strokeStyle = 'rgba(244,241,234,0.45)'; ctx.lineWidth = 1.5; ctx.stroke() }
     }
-    // selection rim
-    if (sel) {
-      ringSector(ctx, rg.r, BAND + 6, indexAngle(0, 1), indexAngle(1, 1))
-      ctx.strokeStyle = withAlpha(col, 0.9); ctx.lineWidth = 1.5; ctx.stroke()
-    }
-    // label at top of ring
+    // track label at top of ring
     const p = polar(rg.r, -Math.PI / 2)
     ctx.fillStyle = tr.mute ? 'rgba(190,178,235,0.3)' : withAlpha(col, 0.95)
     ctx.font = 'bold 8px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
@@ -110,17 +144,17 @@ function draw(): void {
   ctx.fillStyle = hub; ctx.fill()
   ctx.strokeStyle = withAlpha(moodColor.value, 0.45); ctx.lineWidth = 1.5; ctx.stroke()
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillStyle = store.playing ? '#5fe08a' : withAlpha('#f4f1ea', 0.9); ctx.font = '24px "Courier New", monospace'
-  ctx.fillText(store.playing ? '❚❚' : '▶', CENTER, CENTER - 26)
-  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 20px "Courier New", monospace'
-  ctx.fillText(store.readout.chord, CENTER, CENTER + 2)
-  ctx.font = '8px "Courier New", monospace'; ctx.fillStyle = 'rgba(216,211,228,0.55)'
-  ctx.fillText(`${store.bpm} BPM · BAR ${store.readout.bar + 1} · ${store.readout.phrase}`, CENTER, CENTER + 20)
+  ctx.fillStyle = store.playing ? '#5fe08a' : withAlpha('#f4f1ea', 0.9); ctx.font = '22px "Courier New", monospace'
+  ctx.fillText(store.playing ? '❚❚' : '▶', CENTER, CENTER - 30)
+  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 19px "Courier New", monospace'
+  ctx.fillText(store.readout.chord, CENTER, CENTER - 4)
+  ctx.font = '8px "Courier New", monospace'; ctx.fillStyle = 'rgba(216,211,228,0.5)'
+  ctx.fillText(`${store.bpm} BPM · BAR ${store.readout.bar + 1}`, CENTER, CENTER + 13)
+  ctx.font = '7px "Courier New", monospace'; ctx.fillStyle = 'rgba(216,211,228,0.4)'
+  ctx.fillText('TAP=NOTE · HOLD=VOICE', CENTER, CENTER + 28)
 }
 
 onMounted(() => globalStore.setCurrentGame('composer'))
-// The canvas only exists once started (it's behind v-if), so grab its context
-// after that flips true — not at mount time.
 watch(started, async (on) => {
   if (!on) return
   await nextTick()
@@ -146,33 +180,32 @@ function cycleMood(dir: number): void {
     <div class="composer">
       <template v-if="started">
         <canvas ref="canvasRef" class="cv" width="720" height="720"></canvas>
-        <div ref="surfRef" class="surface" @pointerdown="onDown"></div>
+        <div ref="surfRef" class="surface" @pointerdown="onDown" @pointermove="onMove"
+          @pointerup="onUp" @pointercancel="onUp"></div>
 
-        <!-- top: mood + evolve -->
-        <div class="top">
-          <button class="nav" @click="cycleMood(-1)">‹</button>
-          <div class="mood" :style="{ '--c': moodColor }">{{ store.piece.mood }}</div>
-          <button class="nav" @click="cycleMood(1)">›</button>
-          <button class="evolve" :class="{ on: store.piece.evolve }" @click="store.toggleEvolve()">EVOLVE</button>
-        </div>
+        <!-- top arc: mood + evolve -->
+        <button class="ac nav" :style="arc(347, 316)" @click="cycleMood(-1)">‹</button>
+        <div class="ac mood" :style="{ ...arc(0, 320), '--c': moodColor }">{{ store.piece.mood }}</div>
+        <button class="ac nav" :style="arc(13, 316)" @click="cycleMood(1)">›</button>
+        <button class="ac tog" :class="{ on: store.piece.evolve }" :style="arc(40, 314)" @click="store.toggleEvolve()">EVOLVE</button>
 
-        <!-- bottom: compose / tune / panic -->
-        <div class="bottom">
-          <button class="b compose" @click="store.compose()">COMPOSE</button>
-          <div class="seed">{{ store.seed }}</div>
-          <button class="b" @click="showTune = true">TUNE</button>
-          <button class="b panic" @click="store.panic()">◼</button>
-        </div>
+        <!-- bottom arc: transport / generate -->
+        <button class="ac b compose" :style="arc(214, 314)" @click="store.compose()">COMPOSE</button>
+        <button class="ac b dice" :style="arc(196, 320)" @click="store.dice()">⚄ DICE</button>
+        <button class="ac b" :style="arc(164, 320)" @click="showTune = true">TUNE</button>
+        <button class="ac b panic" :style="arc(146, 314)" @click="store.panic()">◼</button>
 
-        <!-- track voice-strip sheet -->
+        <!-- track voice-strip sheet (opened by holding a ring) -->
         <div v-if="selTrack" class="strip-bg" @pointerdown.self="store.selectTrack(null)">
           <div class="strip" :style="{ '--c': TRACK_COLOR[selTrack.id] }">
             <div class="strip-head">
               <span class="sn"><span class="dot"></span>{{ selTrack.name }}</span>
-              <button class="mute" :class="{ on: selTrack.mute }" @click="store.toggleMute(selTrack.id)">
-                {{ selTrack.mute ? 'MUTED' : 'MUTE' }}
-              </button>
-              <button class="close" @click="store.selectTrack(null)">✕</button>
+              <div class="head-btns">
+                <button class="hb" @click="store.randomizeTrack(selTrack.id)">⚄</button>
+                <button class="hb" @click="store.clearTrack(selTrack.id)">CLR</button>
+                <button class="hb mute" :class="{ on: selTrack.mute }" @click="store.toggleMute(selTrack.id)">{{ selTrack.mute ? 'MUTED' : 'MUTE' }}</button>
+                <button class="hb close" @click="store.selectTrack(null)">✕</button>
+              </div>
             </div>
 
             <div v-if="selTrack.kind !== 'kit'" class="engines">
@@ -181,7 +214,7 @@ function cycleMood(dir: number): void {
                 :style="{ '--e': engineColor(store.usableEngine(id)) }"
                 @click="store.setTrackEngine(selTrack.id, id)">{{ label }}</button>
             </div>
-            <div v-else class="kitnote">KICK · SNARE · HAT</div>
+            <div v-else class="kitnote">KICK · SNARE · HAT — ring paints the hats</div>
 
             <div class="steppers">
               <div class="st"><span>OCT</span><button @click="store.shiftOct(selTrack.id, -1)">−</button><b>{{ selTrack.oct }}</b><button @click="store.shiftOct(selTrack.id, 1)">+</button></div>
@@ -246,30 +279,30 @@ function cycleMood(dir: number): void {
 .cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .surface { position: absolute; inset: 0; z-index: 1; touch-action: none; }
 
-.top { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 6px; }
-.top .nav { background: rgba(20,16,40,0.7); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; border-radius: 8px; cursor: pointer; padding: 4px 9px; font-size: 13px; }
-.mood { min-width: 74px; text-align: center; color: var(--c); font-size: 12px; letter-spacing: 0.24em; font-weight: bold; text-shadow: 0 0 12px color-mix(in srgb, var(--c) 40%, transparent); }
-.evolve { background: rgba(20,16,40,0.7); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.6); font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 0.15em; padding: 5px 9px; border-radius: 8px; cursor: pointer; margin-left: 6px; }
-.evolve.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 10px rgba(95,224,138,0.5); }
-
-.bottom { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 7px; }
-.bottom .b { background: rgba(20,16,40,0.75); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 0.14em; padding: 7px 12px; border-radius: 9px; cursor: pointer; }
-.bottom .compose { border-color: rgba(58,214,230,0.5); color: #3ad6e6; box-shadow: 0 0 12px rgba(58,214,230,0.3); }
-.bottom .panic { border-color: rgba(255,92,92,0.45); color: #ff8a8a; padding: 7px 10px; }
-.seed { font-size: 8px; color: rgba(216,211,228,0.45); letter-spacing: 0.08em; }
+/* arc-positioned controls hugging the perimeter */
+.ac { position: absolute; transform: translate(-50%, -50%); z-index: 10; font-family: 'Courier New', monospace; }
+.ac.nav { background: rgba(20,16,40,0.72); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; border-radius: 8px; cursor: pointer; padding: 4px 10px; font-size: 14px; }
+.mood { color: var(--c); font-size: 13px; letter-spacing: 0.22em; font-weight: bold; text-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent); white-space: nowrap; }
+.ac.tog { background: rgba(20,16,40,0.72); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.6); font-size: 8px; letter-spacing: 0.14em; padding: 5px 9px; border-radius: 8px; cursor: pointer; }
+.ac.tog.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 10px rgba(95,224,138,0.5); }
+.ac.b { background: rgba(20,16,40,0.78); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; font-size: 9px; letter-spacing: 0.12em; padding: 7px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+.ac.b.compose { border-color: rgba(58,214,230,0.55); color: #3ad6e6; box-shadow: 0 0 12px rgba(58,214,230,0.3); }
+.ac.b.dice { border-color: rgba(255,193,71,0.5); color: #ffc147; }
+.ac.b.panic { border-color: rgba(255,92,92,0.45); color: #ff8a8a; padding: 7px 10px; }
 
 .strip-bg { position: absolute; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(6,5,14,0.7); backdrop-filter: blur(2px); border-radius: 50%; }
-.strip { width: 82%; max-height: 74%; overflow-y: auto; margin-bottom: 58px; background: rgba(20,16,40,0.97); border: 1px solid var(--c); border-radius: 16px; padding: 12px; color: #d8d3e4; box-shadow: 0 0 24px color-mix(in srgb, var(--c) 25%, transparent); }
+.strip { width: 84%; max-height: 76%; overflow-y: auto; margin-bottom: 48px; background: rgba(20,16,40,0.97); border: 1px solid var(--c); border-radius: 16px; padding: 12px; color: #d8d3e4; box-shadow: 0 0 24px color-mix(in srgb, var(--c) 25%, transparent); }
 .strip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .sn { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: 0.16em; color: #f4f1ea; }
 .sn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
-.mute { background: rgba(30,24,54,0.7); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.7); font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
-.mute.on { background: rgba(255,92,92,0.2); color: #ff8a8a; border-color: rgba(255,92,92,0.45); }
-.close { background: none; border: none; color: rgba(216,211,228,0.6); font-size: 12px; cursor: pointer; }
+.head-btns { display: flex; align-items: center; gap: 5px; }
+.hb { background: rgba(30,24,54,0.7); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.75); font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 0.08em; padding: 4px 8px; border-radius: 7px; cursor: pointer; }
+.hb.mute.on { background: rgba(255,92,92,0.2); color: #ff8a8a; border-color: rgba(255,92,92,0.45); }
+.hb.close { border: none; background: none; font-size: 12px; }
 .engines { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
 .ech { background: rgba(30,24,54,0.7); border: 1px solid color-mix(in srgb, var(--e) 35%, transparent); color: rgba(216,211,228,0.85); font-family: 'Courier New', monospace; font-size: 8px; padding: 5px 3px; border-radius: 7px; cursor: pointer; }
 .ech.on { border-color: var(--e); color: var(--e); background: color-mix(in srgb, var(--e) 18%, rgba(30,24,54,0.7)); }
-.kitnote { font-size: 9px; letter-spacing: 0.2em; color: rgba(216,211,228,0.45); text-align: center; margin-bottom: 10px; }
+.kitnote { font-size: 8px; letter-spacing: 0.14em; color: rgba(216,211,228,0.45); text-align: center; margin-bottom: 10px; }
 .steppers { display: flex; gap: 8px; justify-content: center; margin-bottom: 10px; }
 .st { display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: 0.08em; color: rgba(216,211,228,0.6); }
 .st button { width: 22px; height: 22px; border-radius: 6px; background: rgba(190,178,235,0.08); border: 1px solid rgba(190,178,235,0.25); color: #d8d3e4; font-size: 12px; cursor: pointer; }
@@ -280,7 +313,7 @@ function cycleMood(dir: number): void {
 .sl input { flex: 1; accent-color: var(--c); min-width: 0; }
 .sl b { width: 30px; text-align: right; color: var(--c); }
 
-.tune { width: 66%; margin-bottom: 58px; background: rgba(20,16,40,0.97); border: 1px solid rgba(190,178,235,0.25); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; color: #d8d3e4; }
+.tune { width: 66%; margin-bottom: 48px; background: rgba(20,16,40,0.97); border: 1px solid rgba(190,178,235,0.25); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; color: #d8d3e4; }
 .tune .row { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 0.14em; justify-content: center; }
 .tune .row span { width: 56px; color: rgba(216,211,228,0.55); }
 .tune .row b { min-width: 44px; text-align: center; }

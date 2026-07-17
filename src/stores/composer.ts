@@ -88,11 +88,47 @@ export const useComposerStore = defineStore('composer', () => {
   function setBpm(n: number): void { engine.setBpm(n) }
   function setSwing(a: number): void { swing.value = Math.max(0, Math.min(0.66, a)); engine.setSwing(swing.value) }
 
-  // ---------- compose / mood / tuning ----------
+  // ---------- compose / randomize / step editing ----------
+  // Role-sensible pulse ranges so a random pattern still grooves.
+  const PULSE_RANGE: Record<string, [number, number]> = {
+    bass: [2, 6], melody: [3, 9], pad: [1, 3], kit: [4, 12], texture: [1, 5]
+  }
+  function randInt(a: number, b: number): number { return a + Math.floor(Math.random() * (b - a + 1)) }
+  function randomizeTrackPattern(tr: TrackState): void {
+    const [lo, hi] = PULSE_RANGE[tr.role] ?? [2, 8]
+    tr.pulses = randInt(lo, Math.min(hi, STEPS))
+    tr.rot = randInt(0, STEPS - 1)
+    tr.pattern = patternFor(tr.pulses, tr.rot)
+  }
+  function randomizeAll(): void { for (const tr of piece.tracks) randomizeTrackPattern(tr) }
+
+  // COMPOSE = a whole new piece: new seed (new progression + melodies) AND new
+  // rhythms, so the rings visibly change and it plays fresh notes.
   function compose(newSeed?: string): void {
     seed.value = newSeed && newSeed.trim() ? newSeed.trim() : freshSeed()
+    randomizeAll()
     composer?.reseed(seed.value)
   }
+  // DICE = re-roll the grooves only (keep the seed's melody + harmony character).
+  function dice(): void { randomizeAll() }
+  function randomizeTrack(id: string): void {
+    const tr = trackById(id); if (tr) randomizeTrackPattern(tr)
+  }
+
+  // Manual step editing — place / remove notes on a track's 16-step ring.
+  function stepOn(id: string, step: number): boolean {
+    const tr = trackById(id); return !!(tr && tr.pattern[step])
+  }
+  function toggleStep(id: string, step: number): void {
+    const tr = trackById(id); if (tr) tr.pattern[step] = tr.pattern[step] ? 0 : 1
+  }
+  function paintStep(id: string, step: number, on: boolean): void {
+    const tr = trackById(id); if (tr) tr.pattern[step] = on ? 1 : 0
+  }
+  function clearTrack(id: string): void {
+    const tr = trackById(id); if (tr) tr.pattern = new Array(STEPS).fill(0)
+  }
+
   function toggleEvolve(): void { piece.evolve = !piece.evolve }
   function toggleComp(): void { piece.fx.comp = !piece.fx.comp; composer?.applyMasterFx() }
 
@@ -199,7 +235,8 @@ export const useComposerStore = defineStore('composer', () => {
     rootName, moods, scaleNames, engineOptions, usableEngine, pitchClassName,
     // lifecycle / transport
     boot, dispose, togglePlay, panic, setBpm, setSwing,
-    compose, toggleEvolve, toggleComp, setMood, setRoot, shiftRoot, setScaleName,
+    compose, dice, randomizeTrack, toggleEvolve, toggleComp, setMood, setRoot, shiftRoot, setScaleName,
+    stepOn, toggleStep, paintStep, clearTrack,
     // tracks
     trackById, selectTrack, toggleMute, setTrackEngine, setTrackLevel, setTrackSend,
     setTrackMacro, shiftOct, setPulses, setRot, setDensity,
