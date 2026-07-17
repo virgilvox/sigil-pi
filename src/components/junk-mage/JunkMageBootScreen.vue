@@ -109,8 +109,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&display=swap');
-
 .boot-screen {
   position: absolute;
   inset: 0;
