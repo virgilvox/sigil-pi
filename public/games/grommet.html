@@ -727,24 +727,46 @@ async function safeWrite(ch,cmd){
   catch(e){ if(ch.writeValueWithoutResponse){ try{ await ch.writeValueWithoutResponse(d); }catch(e2){} } }
 }
 
+// Bring up a chosen/remembered device: open GATT, wire notifications, start EEG.
+async function museAttach(device){
+  S.device=device; device.addEventListener('gattserverdisconnected', onDisconnect);
+  const server=await device.gatt.connect(); S.server=server;
+  const svc=await server.getPrimaryService(MUSE_SERVICE);
+  const control=await svc.getCharacteristic(UUID_CONTROL); S.control=control;
+  for(let ch=0;ch<HEAD;ch++){ const c=await svc.getCharacteristic(UUID_EEG[ch]); await c.startNotifications(); c.addEventListener('characteristicvaluechanged', makeEegHandler(ch)); }
+  try{ const tc=await svc.getCharacteristic(UUID_TELEMETRY); await tc.startNotifications(); tc.addEventListener('characteristicvaluechanged', onTelemetry); }catch(e){}
+  try{ const ac=await svc.getCharacteristic(UUID_ACCEL); await ac.startNotifications(); ac.addEventListener('characteristicvaluechanged', onAccel); }catch(e){}
+  await safeWrite(control,'h'); await sleep(120);
+  await safeWrite(control,'p21'); await sleep(120);
+  await safeWrite(control,'s'); await sleep(120);
+  await safeWrite(control,'d');
+  S.source='live'; S.specMax=1; S.energyMax=1; S.poorSince=0; S.coached=false;
+  setLiveUI(true); toast('Connected. Reading your brain.');
+}
+
 async function connectMuse(){
   if(!navigator.bluetooth){ toast('This browser has no Web Bluetooth. The demo keeps running.'); return; }
+  // 1) Silent reconnect: after the first pairing Chromium remembers the headband,
+  //    so getDevices() lets us skip the (top-left, awkward on a round LCD) picker.
+  //    Each remembered device is attempted with a timeout so a powered-off Muse
+  //    can't wedge us — we fall through to the picker if none respond.
+  try{
+    if(navigator.bluetooth.getDevices){
+      const known=await navigator.bluetooth.getDevices();
+      for(const d of known){
+        try{
+          toast('Reconnecting '+(d.name||'Muse')+'...');
+          await Promise.race([museAttach(d), new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),7000))]);
+          return;
+        }catch(e){ /* not this one / out of range — try the next, then the picker */ }
+      }
+    }
+  }catch(e){ /* getDevices unsupported on this build → picker */ }
+  // 2) First time (or nothing remembered reachable) — show the picker once.
   try{
     toast('Looking for your Muse...');
     const device=await navigator.bluetooth.requestDevice({ filters:[{services:[MUSE_SERVICE]}], optionalServices:[MUSE_SERVICE] });
-    S.device=device; device.addEventListener('gattserverdisconnected', onDisconnect);
-    const server=await device.gatt.connect(); S.server=server;
-    const svc=await server.getPrimaryService(MUSE_SERVICE);
-    const control=await svc.getCharacteristic(UUID_CONTROL); S.control=control;
-    for(let ch=0;ch<HEAD;ch++){ const c=await svc.getCharacteristic(UUID_EEG[ch]); await c.startNotifications(); c.addEventListener('characteristicvaluechanged', makeEegHandler(ch)); }
-    try{ const tc=await svc.getCharacteristic(UUID_TELEMETRY); await tc.startNotifications(); tc.addEventListener('characteristicvaluechanged', onTelemetry); }catch(e){}
-    try{ const ac=await svc.getCharacteristic(UUID_ACCEL); await ac.startNotifications(); ac.addEventListener('characteristicvaluechanged', onAccel); }catch(e){}
-    await safeWrite(control,'h'); await sleep(120);
-    await safeWrite(control,'p21'); await sleep(120);
-    await safeWrite(control,'s'); await sleep(120);
-    await safeWrite(control,'d');
-    S.source='live'; S.specMax=1; S.energyMax=1; S.poorSince=0; S.coached=false;
-    setLiveUI(true); toast('Connected. Reading your brain.');
+    await museAttach(device);
   }catch(err){
     if(err && err.name==='NotFoundError') toast('No Muse selected.');
     else toast('Could not connect. The demo keeps running.');

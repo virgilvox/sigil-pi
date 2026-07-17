@@ -74,9 +74,14 @@ fi
 #   --password-store=basic : never prompt to unlock the login keyring on launch.
 #   --enable-experimental-web-platform-features : exposes navigator.bluetooth on
 #     Linux (Web Bluetooth is gated behind this flag here) so the GROMMET Muse app
-#     can connect. No-op if this Chromium build has Web Bluetooth compiled out.
-#   --touch-events=enabled + --enable-features=… : make sure the panel is treated
-#     as a real (multi-)touch device.
+#     and the WASHER rig can connect. No-op if Web Bluetooth is compiled out.
+#   --enable-features=WebBluetoothNewPermissionsBackend : persists BLE grants so
+#     navigator.bluetooth.getDevices() remembers a paired device — GROMMET/WASHER
+#     then reconnect silently on tap instead of re-showing the top-left picker
+#     (awkward on a round LCD). This is chrome://flags/#enable-web-bluetooth-new-
+#     permissions-backend expressed as a launch flag.
+#   --touch-events=enabled : make sure the panel is treated as a real (multi-)
+#     touch device.
 FLAGS=(
   --kiosk
   --app="${URL}"
@@ -97,6 +102,7 @@ FLAGS=(
   --ozone-platform-hint=auto
   --hide-scrollbars
   --enable-experimental-web-platform-features
+  --enable-features=WebBluetoothNewPermissionsBackend
   --touch-events=enabled
 )
 

@@ -322,19 +322,42 @@ async function connectSerial(){
     onLink('serial');
   }catch(e){ log('serial: '+e.message,'err'); }
 }
+// Bring up a chosen/remembered rig: open GATT, grab the Nordic UART chars, notify.
+// bleDev is set only after a successful connect, so a failed silent attempt leaves
+// no half-wired device behind for teardown() to trip over.
+async function bleAttach(dev){
+  dev.addEventListener('gattserverdisconnected', ()=>teardown('link dropped'));
+  const srv = await (await dev.gatt.connect()).getPrimaryService(NUS);
+  bleDev = dev;
+  bleRx = await srv.getCharacteristic(NUS_RX);
+  bleTx = await srv.getCharacteristic(NUS_TX);
+  await bleTx.startNotifications();
+  bleTx.addEventListener('characteristicvaluechanged', e=>{
+    rxBuf += new TextDecoder().decode(e.target.value); drainLines();
+  });
+  onLink('ble');
+}
 async function connectBle(){
   if(!('bluetooth' in navigator)){ log('bluetooth unavailable, use Chromium','err'); return; }
+  // 1) Silent reconnect: after the first pairing Chromium remembers the rig, so
+  //    getDevices() lets us skip the (top-left, awkward on a round LCD) chooser.
+  //    Each remembered device gets a timeout so a powered-off rig can't wedge us.
   try{
-    bleDev = await navigator.bluetooth.requestDevice({ filters:[{services:[NUS]}], optionalServices:[NUS] });
-    bleDev.addEventListener('gattserverdisconnected', ()=>teardown('link dropped'));
-    const srv = await (await bleDev.gatt.connect()).getPrimaryService(NUS);
-    bleRx = await srv.getCharacteristic(NUS_RX);
-    bleTx = await srv.getCharacteristic(NUS_TX);
-    await bleTx.startNotifications();
-    bleTx.addEventListener('characteristicvaluechanged', e=>{
-      rxBuf += new TextDecoder().decode(e.target.value); drainLines();
-    });
-    onLink('ble');
+    if(navigator.bluetooth.getDevices){
+      const known = await navigator.bluetooth.getDevices();
+      for(const d of known){
+        try{
+          log('reconnecting '+(d.name||'rig')+'...');
+          await Promise.race([bleAttach(d), new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),7000))]);
+          return;
+        }catch(e){ /* out of range / not this one — try the next, then the chooser */ }
+      }
+    }
+  }catch(e){ /* getDevices unsupported on this build → chooser */ }
+  // 2) First time (or nothing remembered reachable) — show the chooser once.
+  try{
+    const dev = await navigator.bluetooth.requestDevice({ filters:[{services:[NUS]}], optionalServices:[NUS] });
+    await bleAttach(dev);
   }catch(e){ log('bluetooth: '+e.message,'err'); }
 }
 async function readLoop(){
