@@ -84,6 +84,22 @@ function playFail(): void {
   playTone(150, 0.2, 'sawtooth', 0.08)
 }
 
+// A short mechanical click for the ratchet as rings are turned.
+function playRatchet(): void {
+  if (!audioCtx) return
+  const osc = audioCtx.createOscillator()
+  const gain = audioCtx.createGain()
+  osc.type = 'square'
+  osc.frequency.value = 1500 + Math.random() * 500
+  gain.gain.setValueAtTime(0.06, audioCtx.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.0005, audioCtx.currentTime + 0.03)
+  osc.connect(gain)
+  gain.connect(audioCtx.destination)
+  osc.start()
+  osc.stop(audioCtx.currentTime + 0.04)
+}
+const RATCHET_STEP = Math.PI * 2 / 36   // detents per full turn
+
 export const useSigilEngineStore = defineStore('sigil-engine', () => {
   const CX = 360
   const CY = 360
@@ -109,6 +125,7 @@ export const useSigilEngineStore = defineStore('sigil-engine', () => {
   // Drag state
   const dragRingIndex = ref<number | null>(null)
   const lastDragAngle = ref(0)
+  let ratchetAccum = 0
 
   // Computed
   const ringCount = computed(() => rings.value.length)
@@ -305,6 +322,7 @@ export const useSigilEngineStore = defineStore('sigil-engine', () => {
     if (ringIndex !== null && ringIndex >= 0) {
       rings.value[ringIndex].grabbed = true
       lastDragAngle.value = angle
+      ratchetAccum = 0
     }
   }
 
@@ -320,6 +338,14 @@ export const useSigilEngineStore = defineStore('sigil-engine', () => {
     ring.rotation += delta
     ring.velocity = delta * 0.5
     lastDragAngle.value = angle
+
+    // Ratchet: click once per detent crossed while turning.
+    ratchetAccum += delta
+    let guard = 0
+    while (Math.abs(ratchetAccum) >= RATCHET_STEP && guard++ < 16) {
+      ratchetAccum -= Math.sign(ratchetAccum) * RATCHET_STEP
+      playRatchet()
+    }
 
     checkAlignment()
   }

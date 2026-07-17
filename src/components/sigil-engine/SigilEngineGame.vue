@@ -27,33 +27,38 @@ function findRingAtPoint(x: number, y: number): number {
   return -1
 }
 
-function handlePointerDown(e: PointerEvent): void {
+// Map a DOM pointer into the fixed 720 logical space. The canvas is 720×720 but
+// CircularViewport scales it, so rect.width ≠ 720 — without this conversion the
+// ring hit-tests + drag angles were computed against the wrong coordinates.
+function toLocal(e: PointerEvent): { x: number; y: number } | null {
   const rect = canvasRef.value?.getBoundingClientRect()
-  if (!rect) return
+  if (!rect) return null
+  return {
+    x: (e.clientX - rect.left) / rect.width * 720,
+    y: (e.clientY - rect.top) / rect.height * 720
+  }
+}
 
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
+function handlePointerDown(e: PointerEvent): void {
+  const p = toLocal(e)
+  if (!p) return
 
   // Check center tap
-  const distFromCenter = Math.sqrt((x - CX) ** 2 + (y - CY) ** 2)
+  const distFromCenter = Math.sqrt((p.x - CX) ** 2 + (p.y - CY) ** 2)
   if (distFromCenter < 60) {
     store.handleCenterTap()
     return
   }
 
-  const ringIndex = findRingAtPoint(x, y)
-  store.startDrag(ringIndex, getAngle(x, y))
+  const ringIndex = findRingAtPoint(p.x, p.y)
+  store.startDrag(ringIndex, getAngle(p.x, p.y))
 }
 
 function handlePointerMove(e: PointerEvent): void {
   if (store.dragRingIndex === null) return
-
-  const rect = canvasRef.value?.getBoundingClientRect()
-  if (!rect) return
-
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
-  store.updateDrag(getAngle(x, y))
+  const p = toLocal(e)
+  if (!p) return
+  store.updateDrag(getAngle(p.x, p.y))
 }
 
 function handlePointerUp(): void {
