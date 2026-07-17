@@ -61,7 +61,7 @@ function handleMove(e: MouseEvent | TouchEvent): void {
   const pos = getPos(e)
 
   if (store.dragMode === 1) {
-    const zone = store.ZONES[store.currentPlayer]
+    const zone = store.ZONES[store.strikerZone]
     if (zone.horizontal) {
       store.sliderPos = Math.max(0, Math.min(1, (pos.x - (store.CX - 110)) / 220))
     } else {

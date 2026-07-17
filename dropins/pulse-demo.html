@@ -110,9 +110,9 @@
           const d = Math.hypot(dx, dy)
           if (d <= A.r + B.r && d >= Math.abs(A.r - B.r) && d > 1) {
             A.hits.add(B.id); B.hits.add(A.id)
-            // intersection point along the center line
+            // foot of the chord, measured from A (dx/dy point B→A)
             const t = (d * d + A.r * A.r - B.r * B.r) / (2 * d * d)
-            const px = B.x + dx * t, py = B.y + dy * t
+            const px = A.x - dx * t, py = A.y - dy * t
             const h = (A.hue + B.hue) / 2
             spark(px, py, h)
             // a bright bell — a perfect-fifth stack above the higher note

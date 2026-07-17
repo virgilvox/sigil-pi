@@ -501,7 +501,8 @@ export function useCarromRendering(store: CarromStore) {
       barX = store.CX - 70
       barY = zone.y + (z === 0 ? 90 : -98)
     } else {
-      barX = zone.x + (z === 1 ? 50 : -190)
+      // keep the 140px bar on-board: place it toward center for the side seats
+      barX = zone.x + (z === 1 ? -190 : 50)
       barY = store.CY - 5
     }
 

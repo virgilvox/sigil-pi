@@ -29,7 +29,7 @@ npm start            # zero-dep Node server: serves dist + scans drop-in games
 - **Drop-in games** — single-file HTML dropped in `~/sigil-games` (or `./dropins` in dev) auto-register with **no rebuild**. `server/scan.mjs` scans + parses optional `<meta name="sigil:*">`; `server/index.mjs` serves them; `useGameCatalog.ts` merges baked + drop-in. Hosted in a sandboxed iframe via `src/games/DropinHost.vue`.
 - **`src/components/core/CircularViewport.vue`** — the 720 logical stage, scaled by `--stage-scale` (= displaySize/720 × bezel `--game-scale`). All games wrap in it. `src/stores/global.ts` computes the CSS vars (`detectDisplaySize`, `setGameScale`, `setDiameterOverride`).
 - **CRT** — `src/styles/crt.css` (global, imported in `main.ts`) is a **16-layer phosphor-grid + scanline** stack ported from the junk-mage reference. Bloom/halation/tint route through CSS vars that **default to neutral white**; a game overrides them on its root to theme the glow (junk-mage sets green). `CRTOverlay.vue` renders the layer divs; performance mode drops the heavy animated ones.
-- **Selector** — `useSwitcherLayout.ts` (adaptive concentric rings + paging, shared by home + switcher), `useMonogram.ts`, `AppGlyph.vue` (renders sigil-style SVG icons from `src/games/appIcons.ts`, monogram fallback). `RadialMenu.vue` (home), `AppSwitcher.vue` (in-game overlay opened by two-finger swipe-up or the bottom handle in `App.vue`).
+- **Selector** — `useSwitcherLayout.ts` (adaptive concentric rings + paging, shared by home + switcher), `useMonogram.ts`, `AppGlyph.vue` (renders sigil-style SVG icons from `src/games/appIcons.ts`, monogram fallback). `RadialMenu.vue` (home), `AppSwitcher.vue` (in-game overlay opened by the always-present bottom handle in `App.vue`; the old two-finger swipe-up gesture was removed — it conflicted with multi-touch games — leaving only the handle + an `m`/`Esc` desktop shortcut).
 
 ### Audio / bellowsjs
 
@@ -50,8 +50,12 @@ npm start            # zero-dep Node server: serves dist + scans drop-in games
 | ORRERY | `orrery` | Radial multi-track step sequencer (bellows). Solid. |
 | SYNTH LAB | `synth-lab` | **3-mode bellows synth** (BENCH/PLAY/SEQ). Overhauled: colorful + coherent, faithful to the bellows workbench (see below). |
 | COMPOSER | `composer` | **Generative ensemble** — the bellows workbench's seeded composer on the circle: 6 auto-generated voice tracks as concentric lamp rings, mood selector, compose/evolve, per-track voice strips. |
-| CARROM / PRIZE WHEEL / ROBOT FACE / SIGIL ENGINE | — | Original games, working. |
-| PULSE (`dropins/pulse-demo.html`) | drop-in | Example single-file drop-in. |
+| GROMMET | `grommet` | **Muse EEG brainwave companion**, baked from a self-contained HTML app. Served as a static asset (`public/games/grommet.html`) in a **non-sandboxed** iframe (`GrommetGame.vue`) with `allow="bluetooth"` so a real Muse connects; graceful demo without one. Fully offline (fonts inlined). |
+| CARROM | `carrom` | Physics board game. **Board now fills the round viewport** (surface/wall 322, corner pockets at the diagonal wall). 2 or 4 player via a **player→zone map** (`strikerZone`) so 2-player sit ACROSS; 4-player = 2v2 teams (teammates across). |
+| PRIZE WHEEL | `prize-wheel` | Spin-to-win. **Sound** via `useSFX`: a tick per segment crossing (rate follows speed) + a victory jingle on settle. |
+| SIGIL ENGINE | `sigil-engine` | Rune-ring alignment puzzle. **Fixed** the pointer→720-space mapping (grabbing/rotating rings was broken off-720), added a **ratchet click** per detent as rings turn. |
+| ROBOT FACE | `robot-face` | Virtual pet. Working. |
+| PULSE (`dropins/pulse-demo.html`) | drop-in | Resonant tap toy — full-spectrum per-pulse color, four instruments (waveform+filter) on pentatonic notes, and spark+chime bursts when ripples intersect. Self-contained offline drop-in (the reference for authoring one). |
 
 ---
 
