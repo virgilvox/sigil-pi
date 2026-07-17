@@ -4,9 +4,10 @@ import { useRouter, useRoute } from 'vue-router'
 import { useGlobalStore } from '@/stores/global'
 import { useGameCatalog } from '@/composables/useGameCatalog'
 import { useSwitcherLayout } from '@/composables/useSwitcherLayout'
-import { nodeGlyph } from '@/composables/useMonogram'
+import { CONTROL_ICONS } from '@/games/appIcons'
 import type { GameEntry } from '@/types'
 import CircularViewport from './CircularViewport.vue'
+import AppGlyph from './AppGlyph.vue'
 
 // ═══════════════════════════════════════════════════════════════════
 // APP SWITCHER — stylized radial launcher shown on two-finger swipe-up / handle.
@@ -35,8 +36,7 @@ const currentId = computed(() =>
 const nodes = computed(() =>
   placed.value.map(n => ({
     ...(n.item as GameEntry),
-    x: n.x, y: n.y, ring: n.ring, index: n.index,
-    glyph: nodeGlyph(n.item as GameEntry)
+    x: n.x, y: n.y, ring: n.ring, index: n.index
   }))
 )
 
@@ -121,7 +121,7 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
             @pointerleave="focused === node.id && (focused = null)"
           >
             <span class="node-disc">
-              <span class="node-glyph">{{ node.glyph }}</span>
+              <AppGlyph class="node-glyph" :id="node.id" :name="node.name" :icon="node.icon" />
               <span v-if="node.source === 'dropin'" class="node-badge" title="Drop-in">◇</span>
               <span v-if="node.id === currentId" class="node-live">LIVE</span>
             </span>
@@ -139,14 +139,23 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
                 {{ focusedGame ? focusedGame.description : `${games.length} APPS${pageCount > 1 ? ` · ${page + 1}/${pageCount}` : ''}` }}
               </div>
               <div class="hub-controls">
-                <button class="ctl" title="Home" @click="goHome">⌂</button>
-                <button class="ctl" :class="{ on: globalStore.muted }" title="Mute" @click="toggleMute">
-                  {{ globalStore.muted ? '🔇' : '🔊' }}
+                <button class="ctl" title="Home" @click="goHome">
+                  <svg viewBox="0 0 100 100" class="ico"><g v-html="CONTROL_ICONS.home"></g></svg>
                 </button>
-                <button class="ctl" :class="{ on: globalStore.crtEnabled }" title="CRT" @click="toggleCRT">📺</button>
-                <button class="ctl" title="Settings" @click="showSettings = true">⚙</button>
+                <button class="ctl" :class="{ on: globalStore.muted }" title="Mute" @click="toggleMute">
+                  <svg viewBox="0 0 100 100" class="ico"><g v-html="globalStore.muted ? CONTROL_ICONS.soundOff : CONTROL_ICONS.soundOn"></g></svg>
+                </button>
+                <button class="ctl" :class="{ on: globalStore.crtEnabled }" title="CRT" @click="toggleCRT">
+                  <svg viewBox="0 0 100 100" class="ico"><g v-html="CONTROL_ICONS.crt"></g></svg>
+                </button>
+                <button class="ctl" title="Settings" @click="showSettings = true">
+                  <svg viewBox="0 0 100 100" class="ico"><g v-html="CONTROL_ICONS.gear"></g></svg>
+                </button>
               </div>
-              <button class="ctl resume" title="Resume" @click="resume">▶ RESUME</button>
+              <button class="ctl resume" title="Resume" @click="resume">
+                <svg viewBox="0 0 100 100" class="ico play"><g v-html="CONTROL_ICONS.play"></g></svg>
+                RESUME
+              </button>
             </template>
 
             <template v-else>
@@ -242,6 +251,7 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--c);
   border: 2px solid var(--c);
   background:
     radial-gradient(circle at 38% 32%,
@@ -270,7 +280,7 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
   font-size: 22px;
   font-weight: bold;
   color: var(--c);
-  text-shadow: 0 0 10px color-mix(in srgb, var(--c) 50%, transparent);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--c) 50%, transparent));
   line-height: 1;
 }
 .ring-1 .node-glyph { font-size: 19px; }
@@ -367,9 +377,13 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
 .ctl.on { border-color: rgba(212,208,196,0.6); box-shadow: inset 0 0 10px rgba(212,208,196,0.15); }
 .ctl.resume {
   width: auto; height: auto; border-radius: 20px; padding: 8px 22px;
-  font-size: 11px; letter-spacing: 0.2em; margin-top: 4px;
+  font-size: 11px; letter-spacing: 0.2em; margin-top: 4px; gap: 8px;
   background: #d4d0c4; color: #06060a; border-color: #d4d0c4;
 }
+.ico { width: 20px; height: 20px; overflow: visible; }
+.ico g { fill: none; stroke: currentColor; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.ico.play { width: 13px; height: 13px; }
+.ico.play g { fill: currentColor; stroke: currentColor; }
 
 /* Settings ------------------------------------------------------------- */
 .setting { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 9px; letter-spacing: 0.2em; color: rgba(212,208,196,0.7); }

@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import { useGlobalStore } from '@/stores/global'
 import { useGameCatalog } from '@/composables/useGameCatalog'
 import { useSwitcherLayout } from '@/composables/useSwitcherLayout'
-import { nodeGlyph } from '@/composables/useMonogram'
 import type { GameEntry } from '@/types'
 import CircularViewport from './CircularViewport.vue'
 import CRTOverlay from './CRTOverlay.vue'
+import AppGlyph from './AppGlyph.vue'
 
 // Home launcher. Shares the adaptive radial layout + glyphs with AppSwitcher so
 // the two surfaces never drift.
@@ -53,7 +53,12 @@ onMounted(() => {
         @mouseleave="hovered = null"
       >
         <span class="game-circle" :class="{ hovered: hovered === (node.item as GameEntry).id }">
-          <span class="game-glyph">{{ nodeGlyph(node.item as GameEntry) }}</span>
+          <AppGlyph
+            class="game-glyph"
+            :id="(node.item as GameEntry).id"
+            :name="(node.item as GameEntry).name"
+            :icon="(node.item as GameEntry).icon"
+          />
           <span v-if="(node.item as GameEntry).source === 'dropin'" class="game-badge">◇</span>
         </span>
         <span class="game-name">{{ (node.item as GameEntry).name }}</span>
@@ -119,6 +124,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--game-color);
   border: 2px solid var(--game-color);
   background: radial-gradient(circle at 38% 32%, color-mix(in srgb, var(--game-color) 24%, rgba(12,12,18,0.9)) 0%, rgba(8,8,12,0.9) 70%);
   box-shadow: 0 0 20px color-mix(in srgb, var(--game-color) 30%, transparent), inset 0 2px 10px rgba(0,0,0,0.55);
@@ -130,7 +136,7 @@ onMounted(() => {
   transform: scale(1.15);
   box-shadow: 0 0 42px color-mix(in srgb, var(--game-color) 55%, transparent), inset 0 2px 10px rgba(0,0,0,0.5);
 }
-.game-glyph { font-size: 24px; font-weight: bold; color: var(--game-color); text-shadow: 0 0 12px color-mix(in srgb, var(--game-color) 45%, transparent); }
+.game-glyph { font-size: 24px; font-weight: bold; color: var(--game-color); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--game-color) 45%, transparent)); }
 .ring-1 .game-glyph { font-size: 20px; }
 .ring-2 .game-glyph { font-size: 17px; }
 .game-badge { position: absolute; top: -3px; right: -3px; font-size: 12px; color: var(--game-color); }
