@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSynthLabStore } from '@/stores/synth-lab'
 import type { InstrumentFamily } from 'bellowsjs'
 import { CENTER, polar, wedgeMidAngle, indexAngle, angleFromTop, distFromCenter, ringSector } from './geometry'
@@ -51,6 +51,13 @@ function cellAt(x: number, y: number): { ring: number; wedge: number; t: number 
 function onDown(e: PointerEvent): void {
   e.preventDefault()
   const { x, y } = toLocal(e)
+  // left-rim octave slider: grab it, capture the pointer, don't sound a note
+  if (inOctBand(x, y)) {
+    octPtr = e.pointerId
+    try { surfRef.value!.setPointerCapture(e.pointerId) } catch { /* older engines */ }
+    setOctaveFromXY(x, y)
+    return
+  }
   // center hub = open the sound browser
   if (distFromCenter(x, y) < HUB_R) { showBrowse.value = true; return }
   const cell = cellAt(x, y)
@@ -64,7 +71,17 @@ function onDown(e: PointerEvent): void {
   lit.value = new Set([...lit.value, cellKey])
   lastNote.value = store.noteName(midi)
 }
+function onMove(e: PointerEvent): void {
+  if (e.pointerId !== octPtr) return           // only the octave drag glides; keys don't
+  const { x, y } = toLocal(e)
+  setOctaveFromXY(x, y)
+}
 function onUp(e: PointerEvent): void {
+  if (e.pointerId === octPtr) {
+    octPtr = null
+    try { surfRef.value!.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
+    return
+  }
   const a = active.get(e.pointerId)
   if (!a) return
   store.playNoteOff(a.key)
@@ -134,6 +151,44 @@ function fit(s: string, n: number): string { return s.length > n ? s.slice(0, n 
 onMounted(() => { ctx = canvasRef.value?.getContext('2d') ?? null; raf = requestAnimationFrame(draw) })
 onUnmounted(() => { cancelAnimationFrame(raf); store.releaseAllPlay(); active.clear() })
 
+// ── Octave: an arc slider hugging the left rim of the disc, in the gap between
+// the outer keys (@297) and the stage edge (@360). +3 rides the top, -3 the
+// bottom; each octave is a 15° detent centered on due-west. It shares the
+// keyboard surface's pointer plumbing (correct 720-space mapping, capture,
+// multitouch) — the SVG below is purely the visual; hit-testing lives here.
+const ARC_R = 322
+const OCT_BAND = 26                           // ± hit tolerance around the arc radius
+const OCT_STEP = 15                           // degrees between octaves
+const OCT_RANGE = [-3, -2, -1, 0, 1, 2, 3]
+let octPtr: number | null = null              // pointerId currently dragging the slider
+// due-west is 180°; higher octave sits higher on screen (smaller y → larger angle)
+function octPoint(o: number): { x: number; y: number } {
+  const a = (180 + o * OCT_STEP) * Math.PI / 180
+  return { x: CENTER + ARC_R * Math.cos(a), y: CENTER + ARC_R * Math.sin(a) }
+}
+const detents = computed(() => OCT_RANGE.map(o => ({ o, ...octPoint(o) })))
+const thumb = computed(() => octPoint(store.octave))
+const capTop = computed(() => octPoint(3.7))     // "OCT" caption above the top rung
+const octArcPath = computed(() => {
+  const lo = octPoint(-3), hi = octPoint(3)
+  return `M ${lo.x.toFixed(1)} ${lo.y.toFixed(1)} A ${ARC_R} ${ARC_R} 0 0 0 ${hi.x.toFixed(1)} ${hi.y.toFixed(1)}`
+})
+function octAngleDeg(x: number, y: number): number {
+  let a = Math.atan2(y - CENTER, x - CENTER) * 180 / Math.PI  // -180..180, ±180 = due-west
+  if (a < 0) a += 360
+  return a
+}
+function inOctBand(x: number, y: number): boolean {
+  const d = distFromCenter(x, y)
+  if (d < ARC_R - OCT_BAND || d > ARC_R + OCT_BAND) return false
+  const a = octAngleDeg(x, y)
+  return a >= 135 - OCT_STEP / 2 && a <= 225 + OCT_STEP / 2
+}
+function setOctaveFromXY(x: number, y: number): void {
+  const a = Math.max(135, Math.min(225, octAngleDeg(x, y)))
+  store.setOctave(Math.round((a - 180) / OCT_STEP))
+}
+
 function cycleSound(dir: number): void {
   if (store.playRawEngine) {
     const list = store.PLAY_ENGINES
@@ -153,7 +208,7 @@ function browseFamily(fam: InstrumentFamily): void {
     <canvas ref="canvasRef" class="cv" width="720" height="720"></canvas>
     <div
       ref="surfRef" class="surface"
-      @pointerdown="onDown" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onUp"
+      @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onUp"
     ></div>
 
     <!-- performance toggles tucked into the wasted lower corners -->
@@ -161,12 +216,21 @@ function browseFamily(fam: InstrumentFamily): void {
     <button class="corner cr tog" :class="{ on: store.legatoOn, dis: !store.legatoCapable }"
       :disabled="!store.legatoCapable" @click="store.toggleLegato()">LEG</button>
 
-    <!-- slim bottom bar: sound cycle + octave -->
+    <!-- octave: arc slider hugging the left rim (visual only; hit-testing is on
+         the keyboard surface so it shares capture + multitouch plumbing) -->
+    <svg class="oct-svg" viewBox="0 0 720 720" :style="{ '--c': store.playColor }">
+      <path class="oct-track" :d="octArcPath" />
+      <circle v-for="d in detents" :key="d.o" class="oct-tick" :class="{ on: d.o === store.octave }"
+        :cx="d.x" :cy="d.y" :r="d.o === store.octave ? 3.5 : 2.2" />
+      <circle class="oct-thumb" :cx="thumb.x" :cy="thumb.y" r="16" />
+      <text class="oct-thumb-t" :x="thumb.x" :y="thumb.y + 0.5">{{ store.octave >= 0 ? '+' : '' }}{{ store.octave }}</text>
+      <text class="oct-cap" :x="capTop.x" :y="capTop.y">OCT</text>
+    </svg>
+
+    <!-- slim bottom bar: sound cycle -->
     <div class="ctl-bar" :style="{ '--c': store.playColor }">
       <button class="c nav" @click="cycleSound(-1)">‹</button>
-      <button class="c" @click="store.shiftOctave(-1)">OCT −</button>
-      <span class="oct">{{ store.octave >= 0 ? '+' : '' }}{{ store.octave }}</span>
-      <button class="c" @click="store.shiftOctave(1)">OCT +</button>
+      <span class="snd">SOUND</span>
       <button class="c nav" @click="cycleSound(1)">›</button>
     </div>
 
@@ -207,10 +271,20 @@ function browseFamily(fam: InstrumentFamily): void {
 .surface { position: absolute; inset: 0; z-index: 1; touch-action: none; }
 
 .ctl-bar { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10;
-  display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; }
+  display: flex; align-items: center; gap: 10px; font-family: 'Courier New', monospace; }
 .ctl-bar .c { background: rgba(20,16,40,0.8); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.85); border-radius: 8px; cursor: pointer; padding: 7px 10px; font-size: 9px; letter-spacing: 0.1em; }
 .ctl-bar .nav { color: var(--c); border-color: color-mix(in srgb, var(--c) 45%, transparent); font-size: 13px; padding: 6px 11px; }
-.ctl-bar .oct { color: #f4f1ea; font-size: 11px; min-width: 22px; text-align: center; }
+.ctl-bar .snd { color: color-mix(in srgb, var(--c) 70%, #d8d3e4); font-size: 9px; letter-spacing: 0.24em; }
+
+/* octave arc slider — left rim, follows the disc curve */
+.oct-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 9; pointer-events: none; overflow: visible; }
+.oct-track { fill: none; stroke: rgba(190,178,235,0.22); stroke-width: 2.5; stroke-linecap: round; }
+.oct-tick { fill: rgba(216,211,228,0.4); transition: r 0.12s ease; }
+.oct-tick.on { fill: var(--c); }
+.oct-thumb { fill: color-mix(in srgb, var(--c) 30%, rgba(14,11,26,0.94)); stroke: var(--c); stroke-width: 2;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 55%, transparent)); pointer-events: none; }
+.oct-thumb-t { fill: #f4f1ea; font: bold 15px 'Courier New', monospace; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.oct-cap { fill: color-mix(in srgb, var(--c) 65%, #d8d3e4); font: 9px 'Courier New', monospace; letter-spacing: 0.14em; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 
 .corner { position: absolute; z-index: 10; bottom: 128px; width: 44px; height: 44px; border-radius: 50%;
   background: rgba(20,16,40,0.8); border: 1px solid rgba(190,178,235,0.28); color: rgba(216,211,228,0.75);

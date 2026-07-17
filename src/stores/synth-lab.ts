@@ -275,6 +275,9 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   function shiftOctave(d: number): void {
     octave.value = Math.max(-3, Math.min(3, octave.value + d))
   }
+  function setOctave(v: number): void {
+    octave.value = Math.max(-3, Math.min(3, Math.round(v)))
+  }
   function setSustain(on: boolean): void {
     if (sustainOn.value === on) return
     sustainOn.value = on
@@ -481,7 +484,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     playFamily, playPresetId, playRawEngine, octave, presetsInFamily, currentPreset, playKey,
     playColor, playLabel, playSub, PLAY_ENGINES, familyOrder, families,
     sustainOn, legatoOn, legatoCapable,
-    selectPreset, selectRawEngine, cyclePreset, cycleFamily, shiftOctave,
+    selectPreset, selectRawEngine, cyclePreset, cycleFamily, shiftOctave, setOctave,
     setSustain, toggleSustain, toggleLegato,
     playNoteOn, playNoteOff, releaseAllPlay, isLit, activeNotes,
     // seq
