@@ -150,3 +150,11 @@ dist/
 # Compiled config emitted by the composite tsc build (source is vite.config.ts)
 vite.config.js
 vite.config.d.ts
+
+# Device-local media for the VIDEOS/IMAGES apps — often large, never committed.
+# The apps scan public/videos & public/images at runtime; the owner fills these.
+/public/videos/*
+/public/images/*
+!/public/videos/.gitkeep
+!/public/images/.gitkeep
+/public/.DS_Store

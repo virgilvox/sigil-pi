@@ -28,6 +28,10 @@ export const APP_ICONS: Record<string, string> = {
   'robot-face': '<rect x="24" y="30" width="52" height="42" rx="7"/><circle cx="39" cy="50" r="5"/><circle cx="61" cy="50" r="5"/><path d="M41 63 L59 63 M50 30 L50 20 M50 20 L44 15 M50 20 L56 15"/>',
   // muse brainwave headband — sensor band arc + a brainwave trace
   'grommet': '<path d="M16 52 Q50 14 84 52"/><circle cx="16" cy="52" r="4.5" fill="currentColor"/><circle cx="84" cy="52" r="4.5" fill="currentColor"/><path d="M22 70 Q32 58 42 70 Q52 82 62 70 Q71 60 80 70"/><circle cx="50" cy="40" r="3" fill="currentColor"/>',
+  // video gallery — screen with a play triangle
+  'videos': '<rect x="18" y="26" width="64" height="48" rx="7"/><path d="M42 40 L62 50 L42 60 Z"/><path d="M18 34 L82 34"/>',
+  // photo gallery — frame with a sun over hills
+  'images': '<rect x="18" y="24" width="64" height="52" rx="7"/><circle cx="37" cy="42" r="6"/><path d="M22 68 L42 48 L54 60 L64 50 L78 68"/>',
   // rune sigil in a diamond
   'sigil-engine': '<path d="M50 15 L75 50 L50 85 L25 50 Z"/><path d="M50 31 L50 69 M33 50 L67 50"/><circle cx="50" cy="50" r="7"/>'
 }

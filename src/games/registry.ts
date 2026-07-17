@@ -152,6 +152,30 @@ export const BAKED_GAMES: BakedGame[] = [
     component: () => import('@/components/grommet/GrommetGame.vue')
   },
   {
+    id: 'videos',
+    name: 'VIDEOS',
+    route: '/videos',
+    color: '#ff5ca8',
+    description: 'VIDEO GALLERY',
+    source: 'baked',
+    order: 92,
+    icon: 'videos',
+    component: () => import('@/components/media/MediaViewerGame.vue'),
+    props: { kind: 'videos' }
+  },
+  {
+    id: 'images',
+    name: 'IMAGES',
+    route: '/images',
+    color: '#3ad6e6',
+    description: 'PHOTO GALLERY',
+    source: 'baked',
+    order: 94,
+    icon: 'images',
+    component: () => import('@/components/media/MediaViewerGame.vue'),
+    props: { kind: 'images' }
+  },
+  {
     id: 'sigil-engine',
     name: 'SIGIL ENGINE',
     route: '/sigil-engine',
