@@ -151,10 +151,7 @@ dist/
 vite.config.js
 vite.config.d.ts
 
-# Device-local media for the VIDEOS/IMAGES apps — often large, never committed.
-# The apps scan public/videos & public/images at runtime; the owner fills these.
-/public/videos/*
-/public/images/*
-!/public/videos/.gitkeep
-!/public/images/.gitkeep
+# Media for the VIDEOS/IMAGES apps IS committed so it deploys to the Pi via
+# `git pull`. Drop files into public/videos & public/images and commit them.
+# (.DS_Store stays ignored via the OS-cruft rule above.)
 /public/.DS_Store
