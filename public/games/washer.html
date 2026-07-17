@@ -24,7 +24,10 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
     font-family:var(--mono);color:var(--ink);
-    user-select:none;-webkit-user-select:none;touch-action:none;overscroll-behavior:none;}
+    /* pan-y (not none) so the settings sheet can finger-scroll — an ancestor's
+       touch-action:none blocks descendant scroll containers in Chromium. The aim
+       pad pins touch-action:none on itself (below) so aiming never scrolls. */
+    user-select:none;-webkit-user-select:none;touch-action:pan-y;overscroll-behavior:none;}
   body{display:grid;place-items:center;cursor:none;}
 
   /* the round instrument. everything lives inside this circle. */
@@ -38,7 +41,7 @@
 
   /* two stacked canvases: persistent phosphor trail + live beam overlay */
   .pad{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-    width:70vmin;height:70vmin;border-radius:50%;}
+    width:70vmin;height:70vmin;border-radius:50%;touch-action:none;}
   #trail{z-index:1;}
   #overlay{z-index:2;}
 
