@@ -93,17 +93,21 @@ export const useComposerStore = defineStore('composer', () => {
   function setMood(mood: string): void {
     if (!MOODS[mood]) return
     piece.mood = mood
+    // remember engines so we only rebuild the voices that actually change
+    // (bellows voices can't be disposed — rebuilding unchanged ones would leak)
+    const prevEngines = new Map(piece.tracks.map(t => [t.id, t.engine]))
     const m = applyMoodToTracks(piece.tracks, mood)
     piece.scaleName = m.scaleName
     engine.setBpm(m.bpm)
     setSwing(m.swing / 100)
     if (composer) {
       composer.setScale(piece.root, piece.scaleName)
-      // apply per-track engine/level changes onto the live voices
       for (const tr of piece.tracks) {
-        if (tr.kind !== 'kit') composer.swapEngine(tr)
+        if (tr.kind !== 'kit' && prevEngines.get(tr.id) !== tr.engine) {
+          composer.swapEngine(tr)
+          for (const mc of tr.macros) composer.setMacro(tr, mc)
+        }
         composer.setLevel(tr)
-        for (const mc of tr.macros) composer.setMacro(tr, mc)
       }
       composer.reseed(seed.value)
     }

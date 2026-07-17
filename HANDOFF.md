@@ -49,6 +49,7 @@ npm start            # zero-dep Node server: serves dist + scans drop-in games
 | NULL SYNTH | `null-synth` | Sigil sound machine, **ported to bellowsjs** (6 `va` suit voices, clock sequencer). UI unchanged. |
 | ORRERY | `orrery` | Radial multi-track step sequencer (bellows). Solid. |
 | SYNTH LAB | `synth-lab` | **3-mode bellows synth** (BENCH/PLAY/SEQ). Overhauled: colorful + coherent, faithful to the bellows workbench (see below). |
+| COMPOSER | `composer` | **Generative ensemble** — the bellows workbench's seeded composer on the circle: 6 auto-generated voice tracks as concentric lamp rings, mood selector, compose/evolve, per-track voice strips. |
 | CARROM / PRIZE WHEEL / ROBOT FACE / SIGIL ENGINE | — | Original games, working. |
 | PULSE (`dropins/pulse-demo.html`) | drop-in | Example single-file drop-in. |
 
@@ -63,7 +64,11 @@ npm start            # zero-dep Node server: serves dist + scans drop-in games
 
 - **`src/components/synth-lab/params.ts`** — curve-aware `toNorm`/`fromNorm` (mirrors the bellows workbench `toSlider`/`fromSlider`), enum labels + `isStepped`, `formatValue`, and **`buildPages()`** which splits any engine's `ParamSpec[]` into wheel-sized pages (SOUND / envelopes / **FM operator pages** / **additive partial pages**).
 - **`stores/synth-lab.ts`** — full 17-engine catalogue + `engineMeta`; BENCH param editing + **fx rack** (`benchFx`, add/remove/param over all 19 effects via `inst.fx(...)`/`inst.fxParam`); full **preset bank** browsing across 8 families; the **PLAY note engine** (ledger keyed by pointer, sustain-defer, mono legato glide for string/tube presets via `param('freq', freqOf)`, multitouch polyphony, `activeNotes` lighting); SEQ per-step-instrument; `analyser()`/`meterFrame()` passthrough. Same bellows rules as before (audio objects in closures, pooled voices, numbers-only fx).
-- **BENCH** = engine picker grid + color-coded curve-aware circular knobs (paged) + fx rack sheet + audition. **PLAY** = the liked radial scale wheel, now per-pitch-class hues + active/sustained glow + preset browser + sustain/legato toggles. **SEQ** = vivid tracks, glowing steps, playhead, arm-preview, euclid. **`ScopeStrip.vue`** = shared always-on scope + level meter.
+- **BENCH** = engine picker grid + color-coded curve-aware circular knobs (paged) + fx rack sheet + audition. **PLAY** = the liked radial scale wheel filling the disc; the center **hub is the sound-browser trigger** (PRESETS + any of the 17 raw ENGINES), SUS/LEG toggles tuck into the lower corners, octave + cycle in a slim bottom bar; per-pitch-class hues + active/sustained glow. **SEQ** = vivid tracks, glowing steps, playhead, arm-preview, euclid. **`ScopeStrip.vue`** = shared always-on scope + level meter.
+
+### COMPOSER (`src/components/composer/`, `stores/composer.ts`, `composables/useComposer.ts`)
+
+Round-LCD port of the bellows workbench generative composer. `useComposer.ts` is a faithful port of the `Composer` brain (chord progression, markov melody lanes with chord-tone gravity, nearest-motion pad voicings, euclid gates, drum kit) — the generative helpers (`buildProgression`/`buildStepwiseMatrix`/`weightedWalk`/`voiceLead`/`detectChord`) are all exported from `bellowsjs`. **Kiosk adaptations:** the composition seed is folded into every `b.rng()` label so a new seed reshuffles the piece *without* re-booting bellows or leaking (undisposable) voices — `Composer.reseed()` rebuilds only the score, reusing voices/buses; the registered test-tone `granular` engine is remapped to `wavetable` (`usableEngine`). Six voice tracks render as concentric 16-step lamp rings; tap a ring for its voice strip (engine swap, euclid HITS/ROT, octave, level, dly/vrb sends, macros, mute), tap the hub to play. `setMood` only swaps the voices whose engine actually changed (leak-safe).
 
 ## Known issues / next-up
 
