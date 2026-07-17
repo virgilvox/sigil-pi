@@ -57,10 +57,11 @@ function toLocal(e: PointerEvent): { x: number; y: number } {
   return { x: (e.clientX - r.left) / r.width * 720, y: (e.clientY - r.top) / r.height * 720 }
 }
 
-let dragging: { spec: ParamSpec; startY: number; startVal: number } | null = null
+let dragging: { pointerId: number; spec: ParamSpec; startY: number; startVal: number } | null = null
 
 function onDown(e: PointerEvent): void {
   e.preventDefault()
+  if (dragging) return                 // one knob at a time; ignore extra fingers
   const { x, y } = toLocal(e)
   // audition: center disc plays the scale root
   if (Math.hypot(x - CENTER, y - CENTER) < 54) {
@@ -73,17 +74,19 @@ function onDown(e: PointerEvent): void {
     if (d < bestD) { bestD = d; best = k }
   }
   if (best) {
-    dragging = { spec: best.spec, startY: y, startVal: store.benchParams[best.spec.name] ?? best.spec.default }
+    dragging = { pointerId: e.pointerId, spec: best.spec, startY: y, startVal: store.benchParams[best.spec.name] ?? best.spec.default }
     try { surfRef.value!.setPointerCapture(e.pointerId) } catch { /* ignore */ }
   }
 }
 function onMove(e: PointerEvent): void {
-  if (!dragging) return
+  if (!dragging || e.pointerId !== dragging.pointerId) return
   const { y } = toLocal(e)
   const t = toNorm(dragging.spec, dragging.startVal) + (dragging.startY - y) / 220
   store.setBenchParam(dragging.spec.name, fromNorm(dragging.spec, t))
 }
-function onUp(): void { dragging = null }
+function onUp(e: PointerEvent): void {
+  if (dragging && e.pointerId === dragging.pointerId) dragging = null
+}
 
 function draw(): void {
   raf = requestAnimationFrame(draw)

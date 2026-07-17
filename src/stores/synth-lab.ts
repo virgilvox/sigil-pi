@@ -237,15 +237,22 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     delayBus = bell.bus([['tapeDelay', { time: 0.34, feedback: 0.3, mix: 1 }]], { level: 0.25 })
   }
 
+  let booting: Promise<void> | null = null
   async function boot(): Promise<void> {
-    engine.configure(buildMaster)
-    await engine.boot()
-    pool.clear()
-    // warm the current voices for each mode
-    selectEngine(benchEngine.value)
-    selectPreset(playPresetId.value)
-    palette.forEach(k => pooledVoice(k))
-    engine.onStep(seqScheduler)
+    // Idempotent against a rapid double-tap (which would otherwise clear + rebuild
+    // the pool and leak the first voice set, since bellows voices can't be freed).
+    if (engine.bellows()) return
+    if (booting) return booting
+    booting = (async () => {
+      engine.configure(buildMaster)
+      await engine.boot()
+      pool.clear()
+      selectEngine(benchEngine.value)
+      selectPreset(playPresetId.value)
+      palette.forEach(k => pooledVoice(k))
+      engine.onStep(seqScheduler)
+    })()
+    try { await booting } finally { booting = null }
   }
 
   function dispose(): void {

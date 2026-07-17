@@ -99,9 +99,12 @@ function handlePadRelease(pad: (typeof padPositions.value)[0]): void {
   store.clearPad(padKey)
 }
 
+let xyTouchId: number | null = null
+
 function handleXYStart(e: MouseEvent | TouchEvent): void {
   e.preventDefault()
   isXYActive = true
+  xyTouchId = 'changedTouches' in e ? e.changedTouches[0]?.identifier ?? null : null
   xyPadRef.value?.classList.add('active')
   updateXYCursor(e)
 }
@@ -113,6 +116,7 @@ function handleXYMove(e: MouseEvent | TouchEvent): void {
 
 function handleXYEnd(): void {
   isXYActive = false
+  xyTouchId = null
   xyPadRef.value?.classList.remove('active')
 }
 
@@ -124,9 +128,16 @@ function updateXYCursor(e: MouseEvent | TouchEvent): void {
   const centerY = rect.height / 2
 
   let clientX: number, clientY: number
-  if ('touches' in e && e.touches.length > 0) {
-    clientX = e.touches[0].clientX
-    clientY = e.touches[0].clientY
+  if ('touches' in e) {
+    // Track the finger that started on the pad, not just touches[0].
+    let touch: Touch | null = null
+    if (xyTouchId != null) {
+      for (const t of Array.from(e.touches)) if (t.identifier === xyTouchId) { touch = t; break }
+    }
+    touch = touch || e.touches[0] || e.changedTouches[0]
+    if (!touch) return
+    clientX = touch.clientX
+    clientY = touch.clientY
   } else if ('clientX' in e) {
     clientX = e.clientX
     clientY = e.clientY

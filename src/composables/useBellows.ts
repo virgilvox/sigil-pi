@@ -97,11 +97,12 @@ export function useBellows(opts: UseBellowsOptions = {}) {
    * (seconds) — pass it straight to note({ at: t }) — plus a monotonic tick.
    * Only one subscription is ever live.
    */
-  function onStep(cb: (t: number, tick: number) => void): void {
+  function onStep(cb: (t: number, step: number) => void): void {
     if (!b) return
-    let tick = 0
     unsubClock?.()
-    unsubClock = b.clock.at('16n', (t) => cb(t, tick++))
+    // Forward the clock's real subdivision index (beat-0-aligned, resets on stop)
+    // rather than a private counter — keeps pattern + playhead in phase across stop/start.
+    unsubClock = b.clock.at('16n', (t, step) => cb(t, step))
   }
 
   function start(): void {

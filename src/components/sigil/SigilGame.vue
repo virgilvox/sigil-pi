@@ -3,8 +3,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useGlobalStore } from '@/stores/global'
 import { useSigilStore } from '@/stores/sigil'
 import { useGameLoop } from '@/composables/useGameLoop'
-import { useProceduralMusic } from '@/composables/useProceduralMusic'
-import { useSFX } from '@/composables/useSFX'
+import { useSigilAudio } from '@/composables/useSigilAudio'
 import { SPELLS, PLAYER_COLORS, COLORS, RADII, SIZE, CENTER } from '@/data/spells'
 import type { SpellId } from '@/types'
 import CircularViewport from '@/components/core/CircularViewport.vue'
@@ -22,8 +21,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const globalStore = useGlobalStore()
 const sigilStore = useSigilStore()
-const music = useProceduralMusic()
-const sfx = useSFX()
+const audio = useSigilAudio()
 
 const containerRef = ref<HTMLElement | null>(null)
 const bgCanvasRef = ref<HTMLCanvasElement | null>(null)
@@ -614,10 +612,8 @@ const { start, stop } = useGameLoop({
       sigilStore.stop()
 
       // Stop music and play victory/defeat SFX
-      if (props.mode === 'full') {
-        music.stop()
-      }
-      sfx.play('victory')
+      audio.stopMusic()
+      audio.sfx(winResult === 0 || winResult === 1 ? 'victory' : 'defeat')
     }
   },
   render: draw
@@ -645,7 +641,7 @@ function onStart(id: number, x: number, y: number): void {
   sigilStore.collectOrbs(x, y, pid)
   const orbsAfter = sigilStore.orbs.filter(o => !o.dead).length
   if (orbsAfter < orbsBefore) {
-    sfx.play('collect')
+    audio.sfx('collect')
   }
 
   if (sigilStore.inRing(x, y)) {
@@ -701,7 +697,7 @@ function onEnd(id: number, x: number, y: number): void {
         x,
         y
       )
-      sfx.play('cast')
+      audio.sfx('cast')
     }
   }
   sigilStore.pointers.delete(id)
@@ -749,10 +745,10 @@ function startGame(): void {
   drawBackground()
   start()
 
-  // Start procedural music in full mode
-  if (props.mode === 'full') {
-    music.start()
-  }
+  // Boot bellows audio (idempotent); start the euclidean backing track in full mode.
+  audio.boot().then(() => {
+    if (props.mode === 'full') audio.startMusic()
+  })
 }
 
 function restartGame(): void {
@@ -762,10 +758,10 @@ function restartGame(): void {
   drawBackground()
   start()
 
-  // Start procedural music in full mode
-  if (props.mode === 'full') {
-    music.start()
-  }
+  // Boot bellows audio (idempotent); start the euclidean backing track in full mode.
+  audio.boot().then(() => {
+    if (props.mode === 'full') audio.startMusic()
+  })
 }
 
 onMounted(() => {
@@ -781,12 +777,20 @@ onMounted(() => {
 
   sigilStore.generateRunes()
   drawBackground()
+
+  // Mouse move/up on document so a release anywhere ends the drag (canvas-only
+  // listeners would strand the pointer if the button is released off-canvas).
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', handleMouseUp)
 })
 
 onUnmounted(() => {
   stop()
   sigilStore.stop()
-  music.stop()
+  audio.stopMusic()
+  audio.dispose()
+  document.removeEventListener('mousemove', handleMouseMove)
+  document.removeEventListener('mouseup', handleMouseUp)
   globalStore.setCurrentGame(null)
 })
 </script>
@@ -801,8 +805,6 @@ onUnmounted(() => {
         :height="SIZE"
         class="main-canvas"
         @mousedown="handleMouseDown"
-        @mousemove="handleMouseMove"
-        @mouseup="handleMouseUp"
         @touchstart="handleTouchStart"
         @touchmove="handleTouchMove"
         @touchend="handleTouchEnd"
