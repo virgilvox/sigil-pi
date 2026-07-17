@@ -858,6 +858,9 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
 }
+/* Disable the browser's own touch gestures on the play surface so both players'
+   simultaneous touches are delivered to us (not eaten as pan/pinch). */
+.main-canvas { touch-action: none; }
 
 .hp-display {
   position: absolute;

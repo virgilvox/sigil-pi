@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGlobalStore } from '@/stores/global'
-import { useGestures } from '@/composables/useGestures'
 import AppSwitcher from '@/components/core/AppSwitcher.vue'
 
 const router = useRouter()
 const globalStore = useGlobalStore()
 const appRef = ref<HTMLElement | null>(null)
 
-// A drop-in game runs in an iframe that swallows touch/key events, so the
-// two-finger gesture can't reach us from inside one. This always-present handle
-// (parent document, above the game) guarantees a way back to the switcher from
-// any app. Hidden on home (home is the launcher) and while the switcher is open.
+// The always-present bottom handle is the sole switcher trigger (the old
+// two-finger swipe-up gesture was removed — it conflicted with multi-touch games
+// like SIGIL and wasn't needed once the handle existed). Hidden on home (home is
+// the launcher) and while the switcher is open.
 const showHandle = computed(() =>
   !globalStore.overlayMenuOpen && router.currentRoute.value.name !== 'home'
 )
@@ -21,44 +20,24 @@ function openSwitcher(): void {
   if (!globalStore.overlayMenuOpen) globalStore.openOverlayMenu()
 }
 
-const { attach, detach, gestureState, setMenuOpen } = useGestures({
-  edgeZone: 80,
-  swipeThreshold: 50,
-  onSwipeUp: () => {
-    // Two-finger swipe up from bottom opens the radial app-switcher — from any
-    // app, but not on the home screen (home is already the launcher).
-    if (!globalStore.overlayMenuOpen && router.currentRoute.value.name !== 'home') {
-      globalStore.openOverlayMenu()
-    }
-  },
-  onSwipeDown: () => {
-    // Two-finger swipe down closes overlay menu
-    if (globalStore.overlayMenuOpen) {
-      globalStore.closeOverlayMenu()
-    }
-  }
-})
-
-// Sync gesture composable's internal menu state with global store
-watch(() => globalStore.overlayMenuOpen, (isOpen) => {
-  setMenuOpen(isOpen)
-})
+// Keyboard shortcut for desktop testing only (no keyboard on the kiosk):
+// m / Escape toggles the switcher.
+function onKey(e: KeyboardEvent): void {
+  if (e.key !== 'm' && e.key !== 'M' && e.key !== 'Escape') return
+  if (router.currentRoute.value.name === 'home') return
+  e.preventDefault()
+  globalStore.overlayMenuOpen ? globalStore.closeOverlayMenu() : globalStore.openOverlayMenu()
+}
 
 onMounted(() => {
   globalStore.detectDisplaySize()
   window.addEventListener('resize', globalStore.detectDisplaySize)
-
-  if (appRef.value) {
-    attach(appRef.value)
-  }
+  window.addEventListener('keydown', onKey)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', globalStore.detectDisplaySize)
-
-  if (appRef.value) {
-    detach(appRef.value)
-  }
+  window.removeEventListener('keydown', onKey)
 })
 </script>
 

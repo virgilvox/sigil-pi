@@ -32,6 +32,23 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
+# ── crank the system volume to max every boot ──────────────────────
+# Runs inside the graphical session so it reaches PipeWire (Bookworm default);
+# falls back to ALSA. Chromium follows the default sink, so this makes the kiosk
+# boot loud without touching per-app gain.
+set_volume_max() {
+  if command -v wpctl >/dev/null 2>&1; then
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 >/dev/null 2>&1 || true
+    wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 >/dev/null 2>&1 || true
+  fi
+  if command -v amixer >/dev/null 2>&1; then
+    for ctl in Master PCM Speaker Digital Playback Headphone Lineout; do
+      amixer -q sset "$ctl" 100% unmute >/dev/null 2>&1 || true
+    done
+  fi
+}
+set_volume_max
+
 # Hide the mouse cursor when idle (X11); harmless if unclutter is absent.
 command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 >/dev/null 2>&1 &
 
