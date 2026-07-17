@@ -71,15 +71,16 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   const activeScale = computed(() => markRaw(new Scale(scaleRoot.value, scaleName.value)))
 
   // ---------- voice resolution + pooling ----------
-  // Keys: 'preset:<id>' | 'bench:<engineId>' | '<engineId>'. The 'bench:' prefix
-  // gives the workbench its OWN pooled voice per engine so param/fx edits there
-  // never mutate the sequencer/play voice that shares the same raw engine id.
+  // Keys: 'preset:<id>' | 'bench:<engineId>' | 'play:<engineId>' | '<engineId>'.
+  // The 'bench:'/'play:' prefixes give the workbench and the raw-engine PLAY voice
+  // their OWN pooled voice per engine so edits never mutate a shared voice.
   function resolveSpec(key: string): VoiceSpec {
     if (key.startsWith('preset:')) {
       const p = getPreset(key.slice(7))
       return { engineId: p.engineId, params: { ...p.params }, gain: p.gain ?? 0.8, fx: p.fx, octave: p.octave ?? 0 }
     }
-    const engineId = key.startsWith('bench:') ? key.slice(6) : key
+    const engineId = key.startsWith('bench:') ? key.slice(6)
+      : key.startsWith('play:') ? key.slice(5) : key
     const def = engineDefs.get(engineId)
     const params: Record<string, number> = {}
     def?.params.forEach(s => { params[s.name] = s.default })
@@ -199,18 +200,25 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   // ═══════════════ PLAY ═══════════════
   const playFamily = ref<InstrumentFamily>(familyOrder[0])
   const playPresetId = ref<string>(families.get(familyOrder[0])![0].id)
+  // When set, PLAY sounds a RAW engine (default params) instead of a preset.
+  const playRawEngine = ref<string | null>(null)
   const octave = ref(0)
   const presetsInFamily = computed<InstrumentPreset[]>(() => families.get(playFamily.value) ?? [])
   const currentPreset = computed(() => getPreset(playPresetId.value))
-  const playKey = computed(() => `preset:${playPresetId.value}`)
-  const playColor = computed(() => familyColor(playFamily.value))
+  const playKey = computed(() => playRawEngine.value ? `play:${playRawEngine.value}` : `preset:${playPresetId.value}`)
+  const playColor = computed(() => playRawEngine.value ? engineColor(playRawEngine.value) : familyColor(playFamily.value))
+  const playLabel = computed(() => playRawEngine.value
+    ? (engineDefs.get(playRawEngine.value)?.label ?? playRawEngine.value).toUpperCase()
+    : currentPreset.value.label)
+  const playSub = computed(() => playRawEngine.value ? 'RAW ENGINE' : playFamily.value.toUpperCase())
+  const PLAY_ENGINES = BENCH_ENGINE_IDS.filter(id => engineDefs.has(id))
 
   // expressive controls
   const sustainOn = ref(false)
   const legatoOn = ref(false)
   const legatoCapable = computed(() => {
-    const p = getPreset(playPresetId.value)
-    return LEGATO_ENGINES.has(p.engineId)
+    const e = playRawEngine.value ?? getPreset(playPresetId.value).engineId
+    return LEGATO_ENGINES.has(e)
   })
 
   // note ledger (keyed by caller-supplied unique key, e.g. pointer id)
@@ -234,6 +242,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
 
   function selectPreset(id: string): void {
     releaseAllPlay()
+    playRawEngine.value = null
     playPresetId.value = id
     const p = getPreset(id)
     playFamily.value = p.family
@@ -242,6 +251,14 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     // auto-enable legato for bowed/wind expressive families that can glide
     legatoOn.value = LEGATO_ENGINES.has(p.engineId) &&
       (p.family === 'strings' || p.family === 'winds' || p.family === 'brass')
+  }
+  function selectRawEngine(id: string): void {
+    if (!engineDefs.has(id)) return
+    releaseAllPlay()
+    playRawEngine.value = id
+    octave.value = 0
+    legatoOn.value = false
+    pooledVoice(`play:${id}`)
   }
   function cyclePreset(dir: number): void {
     const list = presetsInFamily.value
@@ -461,10 +478,10 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     allEffects, addBenchFx, removeBenchFx, setBenchFxParam, fxSpecs, fxLabel,
     auditionBench, auditionChord,
     // play
-    playFamily, playPresetId, octave, presetsInFamily, currentPreset, playKey,
-    playColor, familyOrder, families,
+    playFamily, playPresetId, playRawEngine, octave, presetsInFamily, currentPreset, playKey,
+    playColor, playLabel, playSub, PLAY_ENGINES, familyOrder, families,
     sustainOn, legatoOn, legatoCapable,
-    selectPreset, cyclePreset, cycleFamily, shiftOctave,
+    selectPreset, selectRawEngine, cyclePreset, cycleFamily, shiftOctave,
     setSustain, toggleSustain, toggleLegato,
     playNoteOn, playNoteOff, releaseAllPlay, isLit, activeNotes,
     // seq

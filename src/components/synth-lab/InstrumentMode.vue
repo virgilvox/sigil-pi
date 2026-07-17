@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useSynthLabStore } from '@/stores/synth-lab'
 import type { InstrumentFamily } from 'bellowsjs'
 import { CENTER, polar, wedgeMidAngle, indexAngle, angleFromTop, distFromCenter, ringSector } from './geometry'
-import { noteColor, noteGlow, familyColor, withAlpha, stageGradient } from '@/styles/palette'
+import { noteColor, noteGlow, familyColor, engineColor, withAlpha, stageGradient } from '@/styles/palette'
 
 // A scale-aware radial keyboard: two concentric octaves of wedge keys, always in
-// key, multi-touch, now vividly colored per pitch-class with active + sustained
-// glow, backed by the full instrument preset bank + expressive sustain/legato.
+// key, multi-touch, vividly colored per pitch-class with active + sustained glow.
+// The pad is sized to leave a clear bottom margin for controls (which never sit
+// on top of the keys). Sound = any instrument preset OR any raw engine.
 
 const store = useSynthLabStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -15,12 +16,13 @@ const surfRef = ref<HTMLElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let raf = 0
 
-const OUTER_RC = 262, INNER_RC = 172, BAND = 78
+const OUTER_RC = 214, INNER_RC = 138, BAND = 68, HUB_R = 92
 const BASE_OCT = 4
 const active = new Map<number, { key: string; cell: string; midi: number }>()
 const lit = ref(new Set<string>())
 const lastNote = ref('')
 const showBrowse = ref(false)
+const browseMode = ref<'presets' | 'engines'>('presets')
 
 function degreesPerOctave(): number {
   const scale = store.activeScale
@@ -50,7 +52,7 @@ function onDown(e: PointerEvent): void {
   const cell = cellAt(x, y)
   if (!cell) return
   const midi = midiFor(cell.ring, cell.wedge)
-  const vel = 0.55 + 0.42 * cell.t  // outer edge of the band plays harder
+  const vel = 0.55 + 0.42 * cell.t
   const key = `p${e.pointerId}`
   store.playNoteOn(midi, vel, key)
   const cellKey = `${cell.ring}:${cell.wedge}`
@@ -90,8 +92,7 @@ function draw(): void {
       const base = noteColor(midi, { root, oct: ring + store.octave })
       ringSector(ctx, rc, BAND, a0, a1)
       if (held) {
-        ctx.fillStyle = noteGlow(midi)
-        ctx.fill()
+        ctx.fillStyle = noteGlow(midi); ctx.fill()
         ctx.shadowColor = noteGlow(midi); ctx.shadowBlur = 26; ctx.fill(); ctx.shadowBlur = 0
       } else if (sustained) {
         ctx.fillStyle = withAlpha(base, 0.6); ctx.fill()
@@ -99,9 +100,7 @@ function draw(): void {
       } else {
         ctx.fillStyle = withAlpha(base, root ? 0.42 : 0.28); ctx.fill()
       }
-      // rim
       ctx.strokeStyle = withAlpha(base, held ? 0.9 : 0.5); ctx.lineWidth = root ? 1.6 : 1; ctx.stroke()
-      // label
       const p = polar(rc, wedgeMidAngle(w, n))
       ctx.fillStyle = held ? '#12101f' : '#f4f1ea'
       ctx.font = `bold ${root ? 13 : 12}px "Courier New", monospace`
@@ -111,31 +110,35 @@ function draw(): void {
   }
   // center readout
   const c = store.playColor
-  ctx.beginPath(); ctx.arc(CENTER, CENTER, 78, 0, Math.PI * 2)
-  const hub = ctx.createRadialGradient(CENTER, CENTER - 16, 8, CENTER, CENTER, 78)
+  ctx.beginPath(); ctx.arc(CENTER, CENTER, HUB_R, 0, Math.PI * 2)
+  const hub = ctx.createRadialGradient(CENTER, CENTER - 18, 8, CENTER, CENTER, HUB_R)
   hub.addColorStop(0, withAlpha(c, 0.24)); hub.addColorStop(1, 'rgba(12,10,24,0.9)')
   ctx.fillStyle = hub; ctx.fill()
   ctx.strokeStyle = withAlpha(c, 0.5); ctx.lineWidth = 1.5; ctx.stroke()
-  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 15px "Courier New", monospace'
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillText(store.currentPreset.label, CENTER, CENTER - 10)
-  ctx.font = '10px "Courier New", monospace'; ctx.fillStyle = withAlpha(c, 0.8)
-  ctx.fillText(store.playFamily.toUpperCase(), CENTER, CENTER + 6)
+  ctx.fillStyle = '#f4f1ea'; ctx.font = 'bold 15px "Courier New", monospace'
+  ctx.fillText(fit(store.playLabel, 14), CENTER, CENTER - 12)
+  ctx.font = '9px "Courier New", monospace'; ctx.fillStyle = withAlpha(c, 0.8)
+  ctx.fillText(store.playSub, CENTER, CENTER + 4)
   ctx.font = '9px "Courier New", monospace'; ctx.fillStyle = withAlpha('#d8d3e4', 0.55)
-  ctx.fillText(lastNote.value || `${store.scaleRoot} ${store.scaleName}`, CENTER, CENTER + 20)
+  ctx.fillText(lastNote.value || `${store.scaleRoot} ${store.scaleName}`, CENTER, CENTER + 18)
 }
+function fit(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
 onMounted(() => { ctx = canvasRef.value?.getContext('2d') ?? null; raf = requestAnimationFrame(draw) })
-onUnmounted(() => {
-  cancelAnimationFrame(raf)
-  store.releaseAllPlay()
-  active.clear()
-})
+onUnmounted(() => { cancelAnimationFrame(raf); store.releaseAllPlay(); active.clear() })
 
+function cycleSound(dir: number): void {
+  if (store.playRawEngine) {
+    const list = store.PLAY_ENGINES
+    const i = list.indexOf(store.playRawEngine)
+    store.selectRawEngine(list[(i + dir + list.length) % list.length])
+  } else store.cyclePreset(dir)
+}
 function pickPreset(id: string): void { store.selectPreset(id); showBrowse.value = false }
+function pickEngine(id: string): void { store.selectRawEngine(id); showBrowse.value = false }
 function browseFamily(fam: InstrumentFamily): void {
-  // switch the visible preset list without leaving the sheet (don't pick yet)
-  if (store.playFamily !== fam) store.selectPreset(store.families.get(fam)![0].id)
+  if (store.playFamily !== fam || store.playRawEngine) store.selectPreset(store.families.get(fam)![0].id)
 }
 </script>
 
@@ -147,40 +150,51 @@ function browseFamily(fam: InstrumentFamily): void {
       @pointerdown="onDown" @pointerup="onUp" @pointercancel="onUp" @pointerleave="onUp"
     ></div>
 
-    <!-- bottom row A: preset browser trigger + octave -->
-    <div class="rowA">
-      <button class="fam" :style="{ '--c': store.playColor }" @click="showBrowse = true">
-        <span class="dot"></span>{{ store.playFamily.toUpperCase() }}
+    <!-- bottom margin: sound selector bar (clear of the pad) -->
+    <div class="sound-bar" :style="{ '--c': store.playColor }">
+      <button class="nav" @click="cycleSound(-1)">‹</button>
+      <button class="sound" @click="showBrowse = true">
+        <span class="dot"></span>
+        <span class="nm">{{ store.playLabel }}</span>
+        <span class="sub">{{ store.playSub }}</span>
       </button>
-      <div class="oct">
-        <button @click="store.shiftOctave(-1)">−</button>
-        <span>OCT {{ store.octave >= 0 ? '+' : '' }}{{ store.octave }}</span>
-        <button @click="store.shiftOctave(1)">+</button>
-      </div>
+      <button class="nav" @click="cycleSound(1)">›</button>
     </div>
-
-    <!-- bottom row B: preset prev/next + expressive toggles -->
-    <div class="rowB">
-      <button class="nav" @click="store.cyclePreset(-1)">‹</button>
-      <button class="tog" :class="{ on: store.sustainOn }" @click="store.toggleSustain()">SUS</button>
-      <button class="tog" :class="{ on: store.legatoOn, dis: !store.legatoCapable }"
+    <div class="ctl-bar">
+      <button class="c" @click="store.shiftOctave(-1)">OCT −</button>
+      <span class="oct">{{ store.octave >= 0 ? '+' : '' }}{{ store.octave }}</span>
+      <button class="c" @click="store.shiftOctave(1)">OCT +</button>
+      <button class="c tog" :class="{ on: store.sustainOn }" @click="store.toggleSustain()">SUS</button>
+      <button class="c tog" :class="{ on: store.legatoOn, dis: !store.legatoCapable }"
         :disabled="!store.legatoCapable" @click="store.toggleLegato()">LEG</button>
-      <button class="nav" @click="store.cyclePreset(1)">›</button>
     </div>
 
-    <!-- preset browser -->
+    <!-- browser -->
     <div v-if="showBrowse" class="sheet-bg" @pointerdown.self="showBrowse = false">
       <div class="sheet">
-        <div class="fam-tabs">
-          <button v-for="fam in store.familyOrder" :key="fam" class="ftab"
-            :class="{ on: fam === store.playFamily }" :style="{ '--c': familyColor(fam) }"
-            @click="browseFamily(fam as InstrumentFamily)">{{ fam }}</button>
+        <div class="mode-tabs">
+          <button :class="{ on: browseMode === 'presets' }" @click="browseMode = 'presets'">PRESETS</button>
+          <button :class="{ on: browseMode === 'engines' }" @click="browseMode = 'engines'">ENGINES</button>
         </div>
-        <div class="plist">
-          <button v-for="p in store.presetsInFamily" :key="p.id" class="pitem"
-            :class="{ on: p.id === store.playPresetId }" :style="{ '--c': store.playColor }"
-            @click="pickPreset(p.id)">{{ p.label }}</button>
-        </div>
+        <template v-if="browseMode === 'presets'">
+          <div class="fam-tabs">
+            <button v-for="fam in store.familyOrder" :key="fam" class="ftab"
+              :class="{ on: fam === store.playFamily && !store.playRawEngine }" :style="{ '--c': familyColor(fam) }"
+              @click="browseFamily(fam as InstrumentFamily)">{{ fam }}</button>
+          </div>
+          <div class="plist">
+            <button v-for="p in store.presetsInFamily" :key="p.id" class="pitem"
+              :class="{ on: p.id === store.playPresetId && !store.playRawEngine }" :style="{ '--c': familyColor(store.playFamily) }"
+              @click="pickPreset(p.id)">{{ p.label }}</button>
+          </div>
+        </template>
+        <template v-else>
+          <div class="egrid">
+            <button v-for="id in store.PLAY_ENGINES" :key="id" class="echip"
+              :class="{ on: id === store.playRawEngine }" :style="{ '--c': engineColor(id) }"
+              @click="pickEngine(id)"><span class="dot"></span>{{ id }}</button>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -191,24 +205,34 @@ function browseFamily(fam: InstrumentFamily): void {
 .cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .surface { position: absolute; inset: 0; z-index: 1; touch-action: none; }
 
-.rowA { position: absolute; left: 50%; bottom: 80px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 12px; font-family: 'Courier New', monospace; }
-.fam { display: flex; align-items: center; gap: 7px; background: rgba(20,16,40,0.7); border: 1px solid var(--c); color: var(--c); font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 0.18em; padding: 6px 14px; border-radius: 10px; cursor: pointer; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 30%, transparent); }
-.fam .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
-.oct { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 0.1em; color: rgba(216,211,228,0.7); }
-.oct button { background: rgba(20,16,40,0.7); border: 1px solid rgba(190,178,235,0.25); color: #d8d3e4; border-radius: 8px; cursor: pointer; padding: 5px 9px; font-size: 13px; }
+.sound-bar { position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); z-index: 10;
+  display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; }
+.sound-bar .nav { background: rgba(20,16,40,0.75); border: 1px solid rgba(190,178,235,0.28); color: #d8d3e4; border-radius: 9px; cursor: pointer; padding: 8px 11px; font-size: 15px; }
+.sound { display: flex; align-items: center; gap: 8px; background: rgba(20,16,40,0.8); border: 1px solid var(--c); border-radius: 11px; cursor: pointer; padding: 7px 16px; min-width: 168px; justify-content: center; box-shadow: 0 0 16px color-mix(in srgb, var(--c) 32%, transparent); }
+.sound .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
+.sound .nm { color: #f4f1ea; font-size: 12px; letter-spacing: 0.12em; }
+.sound .sub { color: var(--c); font-size: 8px; letter-spacing: 0.14em; }
 
-.rowB { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 8px; font-family: 'Courier New', monospace; }
-.nav { background: rgba(20,16,40,0.7); border: 1px solid rgba(190,178,235,0.25); color: #d8d3e4; border-radius: 8px; cursor: pointer; padding: 6px 12px; font-size: 14px; }
-.tog { background: rgba(20,16,40,0.7); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.6); font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.12em; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
-.tog.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 12px rgba(95,224,138,0.5); }
-.tog.dis { opacity: 0.3; cursor: not-allowed; }
+.ctl-bar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 10;
+  display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; }
+.ctl-bar .c { background: rgba(20,16,40,0.75); border: 1px solid rgba(190,178,235,0.25); color: rgba(216,211,228,0.85); border-radius: 8px; cursor: pointer; padding: 6px 9px; font-size: 9px; letter-spacing: 0.1em; }
+.ctl-bar .oct { color: #f4f1ea; font-size: 11px; min-width: 22px; text-align: center; }
+.ctl-bar .tog.on { background: #5fe08a; color: #12101f; border-color: #5fe08a; box-shadow: 0 0 10px rgba(95,224,138,0.5); }
+.ctl-bar .tog.dis { opacity: 0.3; cursor: not-allowed; }
 
-.sheet-bg { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(6,5,14,0.82); backdrop-filter: blur(3px); border-radius: 50%; }
-.sheet { width: 76%; max-height: 68%; overflow-y: auto; background: rgba(20,16,40,0.95); border: 1px solid rgba(190,178,235,0.25); border-radius: 18px; padding: 14px; color: #d8d3e4; font-family: 'Courier New', monospace; }
+.sheet-bg { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(6,5,14,0.85); backdrop-filter: blur(3px); border-radius: 50%; }
+.sheet { width: 76%; max-height: 70%; overflow-y: auto; background: rgba(20,16,40,0.96); border: 1px solid rgba(190,178,235,0.25); border-radius: 18px; padding: 14px; color: #d8d3e4; font-family: 'Courier New', monospace; }
+.mode-tabs { display: flex; gap: 6px; margin-bottom: 12px; justify-content: center; }
+.mode-tabs button { background: rgba(30,24,54,0.7); border: 1px solid rgba(190,178,235,0.2); color: rgba(216,211,228,0.6); font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.2em; padding: 6px 16px; border-radius: 9px; cursor: pointer; }
+.mode-tabs button.on { background: #d8d3e4; color: #12101f; border-color: #d8d3e4; }
 .fam-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
 .ftab { background: rgba(30,24,54,0.7); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); color: var(--c); font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 0.08em; padding: 5px 8px; border-radius: 8px; cursor: pointer; }
 .ftab.on { background: color-mix(in srgb, var(--c) 24%, rgba(30,24,54,0.7)); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 35%, transparent); }
 .plist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .pitem { background: rgba(30,24,54,0.6); border: 1px solid rgba(190,178,235,0.16); color: #d8d3e4; font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.06em; padding: 9px 8px; border-radius: 9px; cursor: pointer; text-align: left; }
 .pitem.on { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 16%, rgba(30,24,54,0.6)); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 30%, transparent); }
+.egrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.echip { display: flex; align-items: center; gap: 6px; background: rgba(30,24,54,0.7); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); color: #d8d3e4; font-family: 'Courier New', monospace; font-size: 10px; padding: 8px 6px; border-radius: 9px; cursor: pointer; }
+.echip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); flex-shrink: 0; }
+.echip.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 22%, rgba(30,24,54,0.7)); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 40%, transparent); }
 </style>
