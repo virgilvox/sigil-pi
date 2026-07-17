@@ -187,6 +187,17 @@ export const BAKED_GAMES: BakedGame[] = [
     props: { kind: 'images' }
   },
   {
+    id: 'kiosk',
+    name: 'KIOSK',
+    route: '/kiosk',
+    color: '#FF5A33',
+    description: 'HACK.BUILD CARDS',
+    source: 'baked',
+    order: 96,
+    icon: 'kiosk',
+    component: () => import('@/components/kiosk/KioskGame.vue')
+  },
+  {
     id: 'sigil-engine',
     name: 'SIGIL ENGINE',
     route: '/sigil-engine',
