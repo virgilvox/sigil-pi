@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, watch, nextTick, onMounted } from 'vue'
 import { useJunkMageStore } from '@/stores/junk-mage'
+import { drawMonster, type Monster } from '@/data/monsters'
 
 type BetweenChoice = 'heal' | 'power' | 'scout'
 
@@ -10,6 +12,32 @@ const emit = defineEmits<{
   (e: 'exit'): void
   (e: 'between-choice', choice: BetweenChoice): void
 }>()
+
+const victorySpriteRef = ref<HTMLCanvasElement | null>(null)
+const defeatSpriteRef = ref<HTMLCanvasElement | null>(null)
+
+function shareResults(): void {
+  const text = store.getShareText()
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {})
+  }
+}
+
+function renderSprite(): void {
+  if (!store.monster) return
+  const canvas = store.screen === 'victory' ? victorySpriteRef.value : defeatSpriteRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (ctx) drawMonster(ctx, store.monster as Monster, 60)
+}
+
+watch(() => store.screen, () => {
+  nextTick(renderSprite)
+})
+
+onMounted(() => {
+  nextTick(renderSprite)
+})
 </script>
 
 <template>
@@ -20,28 +48,29 @@ const emit = defineEmits<{
     <p class="between-hp">HP: {{ store.mageHp }}/{{ store.mageMaxHp }}</p>
     <div class="between-choices">
       <button class="choice-btn" @click="emit('between-choice', 'heal')">
-        <div class="choice-title">REST</div>
+        <div class="choice-title">🩹 REST</div>
         <div class="choice-desc">Recover HP</div>
       </button>
       <button class="choice-btn" @click="emit('between-choice', 'power')">
-        <div class="choice-title">POWER</div>
+        <div class="choice-title">⚡ POWER</div>
         <div class="choice-desc">+25% damage, no heal</div>
       </button>
       <button class="choice-btn" @click="emit('between-choice', 'scout')">
-        <div class="choice-title">SCOUT</div>
+        <div class="choice-title">🔍 SCOUT</div>
         <div class="choice-desc">See attacks, +5 HP</div>
       </button>
     </div>
-    <button class="btn-exit" @click="emit('exit')">EXIT TO TITLE</button>
+    <button class="btn-exit" @click="emit('exit')">← EXIT TO TITLE</button>
   </div>
 
   <!-- Victory Screen -->
   <div v-else-if="store.screen === 'victory'" class="screen victory-screen">
+    <canvas ref="victorySpriteRef" width="60" height="60" class="result-sprite" />
     <h1 class="result-title victory">VICTORY</h1>
     <div class="result-stats">
       <div class="stat-row">
         <span class="stat-label">RATING</span>
-        <span class="stat-stars">{{ '\u2605'.repeat(store.getRating()) }}{{ '\u2606'.repeat(3 - store.getRating()) }}</span>
+        <span class="stat-stars">{{ '★'.repeat(store.getRating()) }}{{ '☆'.repeat(3 - store.getRating()) }}</span>
       </div>
       <div class="stat-row">
         <span class="stat-label">FIGHTS</span>
@@ -56,20 +85,23 @@ const emit = defineEmits<{
         <span>{{ store.mageHp }}/{{ store.mageMaxHp }}</span>
       </div>
     </div>
+    <div class="share-preview">{{ store.getShareText() }}</div>
     <div class="result-actions">
+      <button class="btn-result btn-share" @click="shareResults">SHARE</button>
       <button class="btn-result btn-replay" @click="emit('replay')">AGAIN</button>
     </div>
-    <button class="btn-exit" @click="emit('exit')">TITLE</button>
+    <button class="btn-exit" @click="emit('exit')">← TITLE</button>
   </div>
 
   <!-- Defeat Screen -->
   <div v-else-if="store.screen === 'defeat'" class="screen defeat-screen">
+    <canvas ref="defeatSpriteRef" width="60" height="60" class="result-sprite" />
     <h1 class="result-title defeat">DEFEATED</h1>
     <p class="defeat-text">
-      {{ store.mageHp <= 0 ? `${store.monster?.name} overwhelmed you.` : 'Ran out of components.' }}
+      {{ store.mageHp <= 0 ? `${store.monster?.name} overwhelmed you.` : 'The junk drawer wasn\'t enough.' }}
     </p>
     <button class="btn-result btn-replay" @click="emit('replay')">TRY AGAIN</button>
-    <button class="btn-exit" @click="emit('exit')">TITLE</button>
+    <button class="btn-exit" @click="emit('exit')">← TITLE</button>
   </div>
 </template>
 
@@ -88,163 +120,146 @@ const emit = defineEmits<{
   z-index: 60;
   font-family: 'VT323', monospace;
   color: #e0e0e0;
+  background: radial-gradient(circle, #1a1a1a 0%, #000 100%);
 }
 
 /* Between fights */
-.between-screen {
-  background: radial-gradient(circle at center, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.95) 100%);
-}
+.between-screen { background: rgba(0, 0, 0, 0.95); }
 
 .between-title {
-  font-family: 'Silkscreen', monospace;
-  font-size: 28px;
-  color: #4ecdc4;
-  margin: 0 0 5px;
-  text-shadow: 0 0 10px #4ecdc4;
+  color: #44ff88;
+  font-size: 20px;
+  margin: 0 0 8px;
 }
 
 .between-subtitle {
-  font-size: 16px;
-  color: #888;
-  margin: 0 0 10px;
+  font-size: 14px;
+  opacity: 0.7;
+  margin: 0 0 16px;
 }
 
 .between-hp {
-  font-size: 20px;
   color: #44ffaa;
+  font-size: 18px;
   margin: 0 0 20px;
 }
 
 .between-choices {
   display: flex;
-  gap: 15px;
+  flex-direction: column;
+  gap: 10px;
+  width: 280px;
 }
 
 .choice-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 15px 20px;
-  background: rgba(0,0,0,0.6);
-  border: 2px solid #4ecdc4;
-  border-radius: 10px;
-  font-family: inherit;
+  padding: 12px;
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  border: 2px solid #555;
+  background: transparent;
+  color: #e0e0e0;
   cursor: pointer;
-  transition: all 0.2s;
-  min-width: 100px;
+  text-align: left;
+  border-radius: 8px;
 }
 
-.choice-btn:hover {
-  background: rgba(78, 205, 196, 0.2);
-  transform: scale(1.05);
-  box-shadow: 0 0 20px rgba(78, 205, 196, 0.5);
-}
+.choice-btn:active { background: rgba(255, 255, 255, 0.1); }
+.choice-title { margin-bottom: 4px; }
+.choice-desc { font-family: 'VT323', monospace; opacity: 0.6; font-size: 11px; }
 
-.choice-title {
-  font-size: 18px;
-  color: #4ecdc4;
-  margin-bottom: 5px;
-}
-
-.choice-desc {
-  font-size: 11px;
-  color: #888;
+.between-screen .btn-exit {
+  position: absolute;
+  bottom: 60px;
 }
 
 /* Result screens */
-.victory-screen {
-  background: radial-gradient(circle at center, rgba(0, 50, 30, 0.9) 0%, rgba(0, 0, 0, 0.95) 100%);
-}
-
-.defeat-screen {
-  background: radial-gradient(circle at center, rgba(50, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.95) 100%);
+.result-sprite {
+  width: 60px;
+  height: 60px;
+  image-rendering: pixelated;
+  margin-bottom: 10px;
+  opacity: 0.5;
 }
 
 .result-title {
   font-family: 'Silkscreen', monospace;
-  font-size: 48px;
-  margin: 0 0 20px;
+  font-size: 24px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
 }
 
-.result-title.victory {
-  color: #44ff88;
-  text-shadow: 0 0 20px #44ff88, 0 0 40px #44ff88;
-}
-
-.result-title.defeat {
-  color: #ff4444;
-  text-shadow: 0 0 20px #ff4444, 0 0 40px #ff4444;
-}
+.result-title.victory { color: #44ff88; }
+.result-title.defeat { color: #ff4444; }
 
 .result-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 30px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #333;
+  padding: 12px 24px;
+  border-radius: 8px;
+  margin: 12px 0;
+  min-width: 180px;
 }
 
 .stat-row {
   display: flex;
   justify-content: space-between;
-  gap: 40px;
-  font-size: 18px;
+  margin: 4px 0;
+  font-size: 14px;
 }
 
-.stat-label {
-  color: #888;
-}
+.stat-label { opacity: 0.6; }
+.stat-stars { color: #ffd700; letter-spacing: 3px; }
 
-.stat-stars {
-  color: #ffd700;
-  font-size: 24px;
+.share-preview {
+  background: #000;
+  padding: 8px 12px;
+  font-family: monospace;
+  font-size: 11px;
+  border-radius: 4px;
+  white-space: pre;
+  margin: 8px 0;
 }
 
 .defeat-text {
-  font-size: 16px;
-  color: #888;
-  margin: 0 0 30px;
+  opacity: 0.7;
+  margin-bottom: 20px;
+  font-size: 14px;
 }
 
 .result-actions {
   display: flex;
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .btn-result {
-  padding: 12px 40px;
+  padding: 10px 20px;
   font-family: 'Silkscreen', monospace;
-  font-size: 18px;
-  border: none;
-  border-radius: 8px;
+  font-size: 12px;
+  border: 2px solid;
+  background: transparent;
   cursor: pointer;
+  border-radius: 6px;
+}
+
+.btn-share { border-color: #44ff88; color: #44ff88; }
+.btn-replay { border-color: #bb66ff; color: #bb66ff; }
+
+.btn-exit {
+  margin-top: 20px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #555;
+  color: #666;
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 4px;
   transition: all 0.2s;
 }
 
-.btn-replay {
-  background: #4ecdc4;
-  color: #000;
-}
-
-.btn-replay:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 20px #4ecdc4;
-}
-
-.btn-exit {
-  background: transparent;
-  border: 1px solid #666;
-  color: #888;
-  padding: 8px 20px;
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  border-radius: 5px;
-  margin-top: 10px;
-}
-
 .btn-exit:hover {
-  border-color: #4ecdc4;
-  color: #4ecdc4;
+  border-color: #888;
+  color: #aaa;
 }
 </style>

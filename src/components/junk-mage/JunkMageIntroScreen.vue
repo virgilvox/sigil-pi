@@ -41,19 +41,19 @@ onMounted(() => {
     <div class="difficulty-select">
       <button class="diff-btn easy" @click="selectDifficulty('easy')">
         <span class="diff-name">EASY</span>
-        <span class="diff-desc">50 HP - 3 Fights</span>
+        <span class="diff-desc">50 HP • 3 Fights</span>
       </button>
       <button class="diff-btn normal" @click="selectDifficulty('normal')">
         <span class="diff-name">NORMAL</span>
-        <span class="diff-desc">40 HP - 3 Fights</span>
+        <span class="diff-desc">40 HP • 3 Fights</span>
       </button>
       <button class="diff-btn hard" @click="selectDifficulty('hard')">
         <span class="diff-name">HARD</span>
-        <span class="diff-desc">35 HP - 3 Fights</span>
+        <span class="diff-desc">35 HP • 3 Fights</span>
       </button>
       <button class="diff-btn brutal" @click="selectDifficulty('brutal')">
         <span class="diff-name">BRUTAL</span>
-        <span class="diff-desc">30 HP - 4 Fights</span>
+        <span class="diff-desc">30 HP • 4 Fights</span>
       </button>
     </div>
     <p class="hint">HP carries between fights</p>
@@ -86,59 +86,50 @@ onMounted(() => {
 
 .screen-title {
   font-family: 'Silkscreen', monospace;
-  font-size: 36px;
-  margin: 0 0 5px;
-  color: #fff;
+  font-size: 24px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
 }
 
 .screen-title .accent {
-  color: #4ecdc4;
+  color: #ff4444;
 }
 
 .intro-flavor {
-  font-size: 14px;
-  color: #888;
   font-style: italic;
-  max-width: 280px;
+  opacity: 0.6;
+  font-size: 14px;
+  max-width: 320px;
+  line-height: 1.4;
   margin: 0 0 20px;
 }
 
 .difficulty-select {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  width: 260px;
 }
 
 .diff-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 40px;
-  background: rgba(0,0,0,0.5);
-  border: 2px solid;
-  border-radius: 8px;
-  font-family: inherit;
+  padding: 14px;
+  font-family: 'Silkscreen', monospace;
+  font-size: 14px;
+  border: 2px solid #444;
+  background: #1a1a1a;
+  color: #e0e0e0;
   cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  border-radius: 8px;
   transition: all 0.2s;
 }
 
-.diff-btn.easy { border-color: #44ff88; }
-.diff-btn.normal { border-color: #4a9fff; }
-.diff-btn.hard { border-color: #ff4444; }
-.diff-btn.brutal { border-color: #ffd700; }
+.diff-btn:active { background: #333; }
 
-.diff-btn:hover {
-  transform: scale(1.05);
-}
-
-.diff-btn.easy:hover { background: rgba(68, 255, 136, 0.2); box-shadow: 0 0 20px rgba(68, 255, 136, 0.5); }
-.diff-btn.normal:hover { background: rgba(74, 159, 255, 0.2); box-shadow: 0 0 20px rgba(74, 159, 255, 0.5); }
-.diff-btn.hard:hover { background: rgba(255, 68, 68, 0.2); box-shadow: 0 0 20px rgba(255, 68, 68, 0.5); }
-.diff-btn.brutal:hover { background: rgba(255, 215, 0, 0.2); box-shadow: 0 0 20px rgba(255, 215, 0, 0.5); }
-
-.diff-name {
-  font-size: 20px;
-  font-weight: bold;
+.diff-desc {
+  font-family: 'VT323', monospace;
+  opacity: 0.6;
 }
 
 .diff-btn.easy .diff-name { color: #44ff88; }
@@ -146,14 +137,9 @@ onMounted(() => {
 .diff-btn.hard .diff-name { color: #ff4444; }
 .diff-btn.brutal .diff-name { color: #ffd700; }
 
-.diff-desc {
-  font-size: 12px;
-  color: #888;
-}
-
 .hint {
-  font-size: 12px;
-  color: #666;
-  margin-top: 20px;
+  font-size: 11px;
+  opacity: 0.4;
+  margin-top: 12px;
 }
 </style>

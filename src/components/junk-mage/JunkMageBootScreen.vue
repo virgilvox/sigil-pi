@@ -73,6 +73,12 @@ onUnmounted(() => {
           <polygon points="32,16 46,24 46,40 32,48 18,40 18,24" fill="none" stroke="#f1c40f" stroke-width="2"/>
           <polygon points="32,22 40,26 40,38 32,42 24,38 24,26" fill="none" stroke="#f1c40f" stroke-width="1.5"/>
           <circle cx="32" cy="32" r="4" fill="#f1c40f"/>
+          <line x1="32" y1="28" x2="32" y2="22" stroke="#f1c40f" stroke-width="1.5"/>
+          <line x1="36" y1="30" x2="40" y2="26" stroke="#f1c40f" stroke-width="1.5"/>
+          <line x1="36" y1="34" x2="40" y2="38" stroke="#f1c40f" stroke-width="1.5"/>
+          <line x1="32" y1="36" x2="32" y2="42" stroke="#f1c40f" stroke-width="1.5"/>
+          <line x1="28" y1="34" x2="24" y2="38" stroke="#f1c40f" stroke-width="1.5"/>
+          <line x1="28" y1="30" x2="24" y2="26" stroke="#f1c40f" stroke-width="1.5"/>
         </g>
         <g class="orbital-dots">
           <circle cx="32" cy="4" r="4" fill="#9b59b6"/>
@@ -84,6 +90,7 @@ onUnmounted(() => {
       <!-- Sigil 4: Waveform -->
       <svg :class="{ active: currentSigil === 3 }" class="sigil" viewBox="0 0 64 64">
         <g class="orbit-ring"><circle cx="32" cy="32" r="28" fill="none" stroke="#4ecdc4" stroke-width="1.5" opacity="0.5"/></g>
+        <g class="orbit-ring"><circle cx="32" cy="32" r="18" fill="none" stroke="#4ecdc4" stroke-width="1" opacity="0.3"/></g>
         <g class="inner-glyph">
           <path d="M14,32 L20,32 L24,18 L32,46 L40,18 L44,32 L50,32" fill="none" stroke="#f1c40f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
         </g>
@@ -119,9 +126,8 @@ onUnmounted(() => {
 
 .intro-sigil {
   position: relative;
-  width: 120px;
-  height: 120px;
-  margin-bottom: 30px;
+  width: 180px;
+  height: 180px;
 }
 
 .intro-sigil .sigil {
@@ -138,17 +144,17 @@ onUnmounted(() => {
 
 .intro-sigil .orbit-ring {
   animation: spinOrbitSlow 10s linear infinite;
-  transform-origin: 32px 32px;
+  transform-origin: center;
 }
 
 .intro-sigil .orbital-dots {
-  animation: spinOrbitFast 3s linear infinite reverse;
-  transform-origin: 32px 32px;
+  animation: spinOrbitFast 3s linear infinite;
+  transform-origin: center;
 }
 
 .intro-sigil .inner-glyph {
   animation: pulseGlow 2s ease-in-out infinite;
-  transform-origin: 32px 32px;
+  transform-origin: center;
 }
 
 @keyframes spinOrbitSlow {
@@ -158,40 +164,50 @@ onUnmounted(() => {
 
 @keyframes spinOrbitFast {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to { transform: rotate(-360deg); }
 }
 
 @keyframes pulseGlow {
-  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 3px #f1c40f); }
-  50% { opacity: 1; filter: drop-shadow(0 0 10px #f1c40f); }
+  0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 3px #f1c40f); }
+  50% { opacity: 1; filter: drop-shadow(0 0 12px #f1c40f); }
 }
 
 .intro-title {
   font-family: 'Silkscreen', monospace;
-  font-size: 48px;
-  color: #4ecdc4;
-  text-shadow: 0 0 20px #4ecdc4, 0 0 40px #4ecdc4;
-  letter-spacing: 8px;
-  animation: fadeInUp 0.3s ease-out;
+  font-size: 36px;
+  color: #f1c40f;
+  text-shadow: 0 0 20px #f1c40f, 0 0 40px #f1c40f50;
+  margin-top: 25px;
+  opacity: 0;
+  animation: fadeInUp 0.8s ease 0.3s forwards;
 }
 
 .intro-subtitle {
-  font-size: 18px;
-  color: #888;
-  margin-top: 10px;
-  letter-spacing: 4px;
-  animation: fadeInUp 0.3s ease-out 0.6s both;
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  color: #4ecdc4;
+  margin-top: 12px;
+  letter-spacing: 2px;
+  opacity: 0;
+  animation: fadeInUp 0.8s ease 0.6s forwards;
 }
 
 .intro-start {
+  font-family: 'Silkscreen', monospace;
   font-size: 16px;
-  color: #4ecdc4;
-  margin-top: 60px;
-  animation: blinkText 1.5s ease-in-out infinite, fadeInUp 0.3s ease-out 1s both;
+  color: #888;
+  margin-top: 40px;
+  opacity: 0;
+  animation: fadeInUp 0.8s ease 1s forwards, blinkText 1.5s ease-in-out 2s infinite;
+}
+
+.intro-start:hover {
+  color: #f1c40f;
+  text-shadow: 0 0 10px #f1c40f;
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

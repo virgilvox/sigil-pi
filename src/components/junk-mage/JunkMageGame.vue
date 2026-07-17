@@ -20,12 +20,102 @@ const audio = useAudio()
 // Canvas refs for pixel art sprites
 const monsterCanvasRef = ref<HTMLCanvasElement | null>(null)
 const mageCanvasRef = ref<HTMLCanvasElement | null>(null)
+const particleCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // Animation state
 const combatLog = ref('')
 const showLog = ref(false)
 const damagePopup = ref({ show: false, value: '', type: 'damage', target: 'monster' })
 const animatingCast = ref(false)
+const showTurnIndicator = ref(false)
+const screenShaking = ref(false)
+const castFlashActive = ref(false)
+const castFlashColor = ref('#4a9fff')
+
+// ===== Particle system (ported from reference) =====
+interface Particle {
+  x: number; y: number; vx: number; vy: number
+  life: number; maxLife: number; size: number; color: string; type: string
+}
+const particles: Particle[] = []
+let particleCtx: CanvasRenderingContext2D | null = null
+let particleRaf = 0
+
+function spawnParticles(element: string, count = 5): void {
+  const cx = 140, cy = 140
+  const color = ELEMENTS[element as ElementId]?.color || '#fff'
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 0.5 + Math.random() * 1.5
+    const dist = 20 + Math.random() * 40
+    particles.push({
+      x: cx + Math.cos(angle) * dist,
+      y: cy + Math.sin(angle) * dist,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 50 + Math.random() * 30,
+      maxLife: 80,
+      size: 2 + Math.random() * 3,
+      color,
+      type: element
+    })
+  }
+}
+
+function updateParticles(): void {
+  if (!particleCtx && particleCanvasRef.value) {
+    particleCtx = particleCanvasRef.value.getContext('2d')
+  }
+  if (!particleCtx) return
+  particleCtx.clearRect(0, 0, 280, 280)
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i]
+    p.life--
+    if (p.life <= 0) { particles.splice(i, 1); continue }
+    p.x += p.vx
+    p.y += p.vy
+    particleCtx.globalAlpha = p.life / p.maxLife
+    particleCtx.fillStyle = p.color
+    particleCtx.beginPath()
+    particleCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+    particleCtx.fill()
+  }
+  particleCtx.globalAlpha = 1
+}
+
+function particleLoop(): void {
+  updateParticles()
+  particleRaf = requestAnimationFrame(particleLoop)
+}
+
+// Reset particle context when leaving the game screen (canvas unmounts)
+watch(() => store.screen, (s) => {
+  if (s !== 'game') {
+    particleCtx = null
+    particles.length = 0
+  } else {
+    nextTick(() => {
+      particleCtx = particleCanvasRef.value?.getContext('2d') || null
+    })
+  }
+})
+
+function triggerShake(): void {
+  screenShaking.value = false
+  requestAnimationFrame(() => {
+    screenShaking.value = true
+    setTimeout(() => { screenShaking.value = false }, 300)
+  })
+}
+
+function triggerCastFlash(color: string): void {
+  castFlashColor.value = color
+  castFlashActive.value = false
+  requestAnimationFrame(() => {
+    castFlashActive.value = true
+    setTimeout(() => { castFlashActive.value = false }, 500)
+  })
+}
 
 // Computed values
 const monsterHpPercent = computed(() => {
@@ -37,19 +127,15 @@ const mageHpPercent = computed(() => {
   return Math.max(0, (store.mageHp / store.mageMaxHp) * 100)
 })
 
-// HP arc calculations - matches original implementation
+// HP arc calculations - matches original implementation (ARC_LEN 200, CIRC 1696)
 const monsterHpArc = computed(() => {
-  const circumference = 2 * Math.PI * 270
-  const quarter = circumference / 4
-  const hp = (monsterHpPercent.value / 100) * quarter * 0.8
-  return `${hp} ${circumference}`
+  const filled = 200 * (monsterHpPercent.value / 100)
+  return `${filled} ${1696 - filled}`
 })
 
 const mageHpArc = computed(() => {
-  const circumference = 2 * Math.PI * 270
-  const quarter = circumference / 4
-  const hp = (mageHpPercent.value / 100) * quarter * 0.8
-  return `${hp} ${circumference}`
+  const filled = 200 * (mageHpPercent.value / 100)
+  return `${filled} ${1696 - filled}`
 })
 
 const spellPreview = computed(() => {
@@ -153,13 +239,15 @@ function handleBootDismiss(): void {
 function selectDifficulty(diff: 'easy' | 'normal' | 'hard' | 'brutal'): void {
   sfx.play('click')
   store.startGame(diff)
-  setLog(`⚔ ${store.monster?.name || 'Monster'} appears!`)
+  setLog(`⚔ <span class="log-monster">${store.monster?.name || 'Monster'}</span> appears!`)
 }
 
 function toggleComponent(index: number): void {
   const wasSelected = store.selected.includes(index)
+  const element = store.components[index]?.element
   if (store.toggleComponent(index)) {
     sfx.play(wasSelected ? 'click' : 'collect')
+    if (!wasSelected && element) spawnParticles(element, 3)
   }
 }
 
@@ -168,6 +256,12 @@ async function castSpell(): Promise<void> {
 
   animatingCast.value = true
   sfx.play('cast')
+
+  // Capture primary element before selection is cleared, spawn cast particles + flash
+  const primary = primaryElement.value || 'spark'
+  const primaryCol = primaryColor.value
+  for (let i = 0; i < 20; i++) spawnParticles(primary, 1)
+  triggerCastFlash(primaryCol)
 
   const spell = store.castSpell()
   if (!spell) {
@@ -179,7 +273,7 @@ async function castSpell(): Promise<void> {
   await delay(300)
   sfx.play(spell.weakness ? 'hit' : 'damage')
   showDamagePopup(`-${spell.damage}`, spell.weakness ? 'crit' : 'damage', 'monster')
-  setLog(`${spell.name} → ${spell.damage}${spell.weakness ? ' CRIT!' : ''}`)
+  setLog(`<span class="log-player">${spell.name}</span> → <span class="log-damage">${spell.damage}</span>${spell.weakness ? ' <span class="log-crit">CRIT!</span>' : ''}`)
 
   await delay(400)
 
@@ -192,8 +286,13 @@ async function castSpell(): Promise<void> {
     return
   }
 
-  // Monster turn
+  // Monster turn — enemy turn indicator + screen shake
   await delay(300)
+  showTurnIndicator.value = true
+  await delay(350)
+  showTurnIndicator.value = false
+  await delay(100)
+
   const result = store.monsterTurn()
 
   if (result.burnDamage > 0) {
@@ -202,18 +301,20 @@ async function castSpell(): Promise<void> {
   }
 
   if (result.stunned) {
-    setLog(`${store.monster?.name} stunned!`)
+    setLog(`<span class="log-monster">${store.monster?.name}</span> stunned!`)
   } else if (result.special) {
-    setLog(`${store.monster?.name} uses ${result.special.toUpperCase()}!`)
+    setLog(`<span class="log-monster">${store.monster?.name}</span> uses <span class="log-effect">${result.special.toUpperCase()}</span>!`)
     if (result.damage > 0) {
+      triggerShake()
       await delay(200)
       sfx.play('damage')
       showDamagePopup(`-${result.damage}`, 'damage', 'mage')
     }
   } else if (result.damage > 0) {
+    triggerShake()
     sfx.play('damage')
     showDamagePopup(`-${result.damage}`, 'damage', 'mage')
-    setLog(`${store.monster?.name} → ${result.damage}`)
+    setLog(`<span class="log-monster">${store.monster?.name}</span> → <span class="log-damage">${result.damage}</span>`)
   }
 
   await delay(200)
@@ -235,7 +336,7 @@ function healAction(): void {
   if (store.sacrificeHeal()) {
     sfx.play('heal')
     showDamagePopup('+8', 'heal', 'mage')
-    setLog('Sacrificed component for +8 HP')
+    setLog('<span class="log-heal">Sacrificed component for +8 HP</span>')
   }
 }
 
@@ -243,14 +344,16 @@ function rerollAction(): void {
   if (store.rerollParts()) {
     sfx.play('cast')
     showDamagePopup(`-${store.rerollCost}`, 'damage', 'mage')
-    setLog('Transmuted for new parts')
+    setLog('<span class="log-effect">Transmuted for new parts</span>')
+    const pool = ['chaos', 'void', 'spark']
+    for (let i = 0; i < 12; i++) spawnParticles(pool[Math.floor(Math.random() * 3)], 1)
   }
 }
 
 function betweenChoice(choice: 'heal' | 'power' | 'scout'): void {
   sfx.play('click')
   store.betweenChoice(choice)
-  setLog(`⚔ ${store.monster?.name || 'Monster'} appears!`)
+  setLog(`⚔ <span class="log-monster">${store.monster?.name || 'Monster'}</span> appears!`)
 }
 
 function exitToTitle(): void {
@@ -272,9 +375,12 @@ function delay(ms: number): Promise<void> {
 onMounted(() => {
   globalStore.setCurrentGame('junk-mage')
   nextTick(renderSprites)
+  particleLoop()
 })
 
 onUnmounted(() => {
+  cancelAnimationFrame(particleRaf)
+  particles.length = 0
   store.reset()
   globalStore.setCurrentGame(null)
 })
@@ -296,12 +402,12 @@ onUnmounted(() => {
       />
 
       <!-- Game Screen -->
-      <div v-else-if="store.screen === 'game'" class="game-ui">
+      <div v-else-if="store.screen === 'game'" class="game-ui" :class="{ shake: screenShaking }">
         <!-- HP Ring SVG -->
         <div class="hp-ring">
           <svg viewBox="0 0 580 580">
             <!-- Monster HP (right side) -->
-            <circle class="hp-track" cx="290" cy="290" r="270" stroke-dasharray="200 1696" stroke-dashoffset="100"/>
+            <circle class="hp-track" cx="290" cy="290" r="270" stroke-dasharray="200 1496" stroke-dashoffset="100"/>
             <circle
               class="hp-fill monster"
               cx="290" cy="290" r="270"
@@ -309,7 +415,7 @@ onUnmounted(() => {
               stroke-dashoffset="100"
             />
             <!-- Mage HP (left side) -->
-            <circle class="hp-track" cx="290" cy="290" r="270" stroke-dasharray="200 1696" stroke-dashoffset="-748"/>
+            <circle class="hp-track" cx="290" cy="290" r="270" stroke-dasharray="200 1496" stroke-dashoffset="-748"/>
             <circle
               class="hp-fill mage"
               cx="290" cy="290" r="270"
@@ -348,7 +454,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Combat Log -->
-        <div class="combat-log" :class="{ show: showLog }">{{ combatLog }}</div>
+        <div class="combat-log" :class="{ show: showLog }" v-html="combatLog" />
 
         <!-- Damage Popups -->
         <div
@@ -362,12 +468,18 @@ onUnmounted(() => {
         <!-- Battle Stage (center) - larger size -->
         <div class="battle-stage">
           <div class="stage-grid" />
+          <canvas
+            ref="particleCanvasRef"
+            class="stage-particles"
+            width="280"
+            height="280"
+          />
 
           <!-- Spell circles with runes -->
           <div class="spell-circles" v-if="store.selected.length > 0">
             <div class="spell-circle outer" :class="{ active: store.selected.length >= 1 }" :style="{ borderColor: primaryColor }" />
-            <div class="spell-circle middle" :class="{ active: store.selected.length >= 2 }" :style="{ borderColor: primaryColor }" />
-            <div class="spell-circle inner" :class="{ active: store.selected.length >= 3 }" :style="{ borderColor: primaryColor }" />
+            <div class="spell-circle middle" :class="{ active: store.selected.length >= 1 }" :style="{ borderColor: primaryColor }" />
+            <div class="spell-circle inner" :class="{ active: store.selected.length >= 1 }" :style="{ borderColor: primaryColor }" />
 
             <!-- Spell slots showing selected components -->
             <div class="spell-slots">
@@ -388,7 +500,7 @@ onUnmounted(() => {
                 v-for="(rune, i) in spellRunes.slice(0, 6)"
                 :key="i"
                 class="spell-rune"
-                :class="{ active: store.selected.length > 0 }"
+                :class="{ active: i < store.selected.length * 2 }"
                 :style="{ color: primaryColor }"
               >{{ rune }}</span>
             </div>
@@ -396,22 +508,23 @@ onUnmounted(() => {
             <!-- Spell core glow -->
             <div
               class="spell-core"
-              :class="{ active: store.selected.length >= 2 }"
-              :style="{ background: `radial-gradient(circle, ${primaryColor}40 0%, transparent 70%)` }"
+              :class="{ active: store.selected.length >= 1 }"
+              :style="{ background: primaryColor }"
             >
-              <div class="core-icon" :style="{ color: primaryColor }" v-html="ELEMENTS[primaryElement || 'spark']?.svgIcon || ''" />
+              <div class="core-icon" :style="{ color: '#fff' }" v-html="ELEMENTS[primaryElement || 'spark']?.svgIcon || ''" />
             </div>
           </div>
 
-          <!-- Spell preview info -->
-          <div v-if="spellPreview" class="spell-info active">
-            <div class="spell-name" :style="{ color: primaryColor }">{{ spellPreview.name }}</div>
-            <div class="spell-damage">
-              {{ spellPreview.damage }} DMG
-              <span v-if="spellPreview.weakness" class="spell-bonus">⚡CRIT</span>
-            </div>
+          <div v-if="!spellPreview" class="stage-hint">Select 2-3 components</div>
+        </div>
+
+        <!-- Spell preview info (sibling of battle-stage so it isn't clipped) -->
+        <div v-if="spellPreview" class="spell-info active">
+          <div class="spell-name" :style="{ color: primaryColor }">{{ spellPreview.name }}</div>
+          <div class="spell-damage">
+            {{ spellPreview.damage }} DMG
+            <span v-if="spellPreview.weakness" class="spell-bonus">⚡CRIT</span>
           </div>
-          <div v-else class="stage-hint">Select 2-3 components</div>
         </div>
 
         <!-- Mage Zone -->
@@ -473,7 +586,7 @@ onUnmounted(() => {
         </button>
         <button class="action-btn btn-reroll" :disabled="!store.canReroll" @click="rerollAction">
           <span class="icon">↻</span>
-          <span>-{{ store.rerollCost }}</span>
+          <span>-{{ store.rerollCost }} HP</span>
         </button>
 
         <!-- Cast Button -->
@@ -509,6 +622,16 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
+
+        <!-- Turn indicator -->
+        <div class="turn-indicator" :class="{ show: showTurnIndicator }">ENEMY TURN</div>
+
+        <!-- Cast flash overlay -->
+        <div
+          class="cast-flash"
+          :class="{ active: castFlashActive }"
+          :style="{ '--flash-color': castFlashColor }"
+        />
       </div>
 
       <!-- Result Screens (Between/Victory/Defeat) -->
@@ -905,6 +1028,15 @@ onUnmounted(() => {
   border-radius: 50%;
 }
 
+.stage-particles {
+  position: absolute;
+  inset: 0;
+  width: 280px;
+  height: 280px;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* Spell circles */
 .spell-circles {
   position: absolute;
@@ -1148,6 +1280,7 @@ onUnmounted(() => {
   display: flex;
   gap: 4px;
   margin-top: 10px;
+  justify-content: center;
 }
 
 .combo-dot {
@@ -1495,5 +1628,80 @@ onUnmounted(() => {
 .between-screen .btn-exit {
   position: absolute;
   bottom: 60px;
+}
+
+/* Colored combat-log segments */
+.combat-log .log-player { color: #6bb3ff; }
+.combat-log .log-monster { color: #ff6b6b; }
+.combat-log .log-damage { color: #ff4444; }
+.combat-log .log-effect { color: #bb66ff; }
+.combat-log .log-crit { color: #ffd700; }
+.combat-log .log-heal { color: #44ffaa; }
+
+/* Turn indicator */
+.turn-indicator {
+  position: absolute;
+  top: 280px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Silkscreen', monospace;
+  font-size: 16px;
+  color: #ff4444;
+  background: rgba(0, 0, 0, 0.95);
+  padding: 10px 18px;
+  border: 2px solid #ff4444;
+  border-radius: 8px;
+  z-index: 50;
+  display: none;
+}
+
+.turn-indicator.show {
+  display: block;
+  animation: flashIn 0.4s ease;
+}
+
+@keyframes flashIn {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+  50% { transform: translateX(-50%) scale(1.1); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+
+/* Cast flash overlay */
+.cast-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 0%, transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 80;
+  border-radius: 50%;
+}
+
+.cast-flash.active {
+  animation: castFlash 0.5s ease-out;
+}
+
+@keyframes castFlash {
+  0% { opacity: 0; background: radial-gradient(circle at center 70%, var(--flash-color) 0%, transparent 50%); }
+  30% { opacity: 0.8; }
+  100% { opacity: 0; background: radial-gradient(circle at center 70%, transparent 0%, transparent 100%); }
+}
+
+/* Screen shake on monster attack */
+.game-ui.shake {
+  animation: screenShake 0.3s ease-out;
+}
+
+@keyframes screenShake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-5px, -3px); }
+  20% { transform: translate(5px, 3px); }
+  30% { transform: translate(-4px, 2px); }
+  40% { transform: translate(4px, -2px); }
+  50% { transform: translate(-3px, 3px); }
+  60% { transform: translate(3px, -1px); }
+  70% { transform: translate(-2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  90% { transform: translate(-1px, 1px); }
 }
 </style>
