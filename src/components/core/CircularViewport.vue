@@ -34,7 +34,7 @@ const viewportClass = computed(() => ({
   max-height: var(--display-size, 720px);
   border-radius: 50%;
   overflow: hidden;
-  background: #06060a;
+  background: radial-gradient(circle at 50% 42%, #0f0b1c 0%, #0a0812 62%, #050409 100%);
 }
 
 .viewport-stage {

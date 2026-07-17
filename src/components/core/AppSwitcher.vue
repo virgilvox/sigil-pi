@@ -88,15 +88,18 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
 
       <CircularViewport>
         <div class="switcher" :class="{ ready }">
+          <!-- colorful spectrum aura -->
+          <div class="aura"></div>
+          <div class="aura aura2"></div>
           <!-- counter-rotating ambient rings -->
           <svg class="rings" viewBox="0 0 720 720">
             <g class="ring-slow">
-              <circle cx="360" cy="360" r="138" fill="none" stroke="rgba(212,208,196,0.10)" />
-              <circle cx="360" cy="360" r="292" fill="none" stroke="rgba(212,208,196,0.05)" />
+              <circle cx="360" cy="360" r="138" fill="none" stroke="rgba(180,124,255,0.12)" />
+              <circle cx="360" cy="360" r="292" fill="none" stroke="rgba(92,155,255,0.06)" />
             </g>
             <g class="ring-fast">
-              <circle cx="360" cy="360" r="210" fill="none" stroke="rgba(212,208,196,0.07)" stroke-dasharray="2 10" />
-              <circle cx="360" cy="360" r="340" fill="none" stroke="rgba(212,208,196,0.04)" />
+              <circle cx="360" cy="360" r="210" fill="none" stroke="rgba(255,127,208,0.08)" stroke-dasharray="2 10" />
+              <circle cx="360" cy="360" r="340" fill="none" stroke="rgba(76,199,192,0.05)" />
             </g>
           </svg>
 
@@ -206,11 +209,24 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
   inset: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle at center,
-      color-mix(in srgb, var(--focus-c) 8%, rgba(12,12,20,0.92)) 0%,
-      rgba(4,4,8,0.96) 68%);
+    radial-gradient(circle at 50% 44%,
+      color-mix(in srgb, var(--focus-c) 14%, #14102a) 0%,
+      #0c0a1a 52%, #070510 100%);
   transition: background 0.5s ease;
 }
+
+/* Spectrum aura — same colorful wheel as the home menu, tinted toward focus. */
+.aura {
+  position: absolute; left: 50%; top: 50%;
+  width: 600px; height: 600px; margin: -300px 0 0 -300px; border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    #ff6b5c, #ffb347, #ffe14c, #5fe08a, #4cc7c0,
+    #3ad6e6, #5c9bff, #b47cff, #ff5ca8, #ff6b5c);
+  filter: blur(56px); opacity: 0.20;
+  animation: aura-spin 52s linear infinite; pointer-events: none;
+}
+.aura2 { width: 360px; height: 360px; margin: -180px 0 0 -180px; opacity: 0.15; filter: blur(44px); animation: aura-spin 72s linear infinite reverse; }
+@keyframes aura-spin { to { transform: rotate(360deg); } }
 
 .rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .ring-slow, .ring-fast { transform-origin: 360px 360px; }
@@ -252,16 +268,22 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
   align-items: center;
   justify-content: center;
   color: var(--c);
-  border: 2px solid var(--c);
+  border: 2px solid color-mix(in srgb, var(--c) 80%, transparent);
   background:
-    radial-gradient(circle at 38% 32%,
-      color-mix(in srgb, var(--c) 26%, rgba(14,14,20,0.9)) 0%,
-      rgba(8,8,12,0.92) 70%);
+    radial-gradient(circle at 36% 28%,
+      color-mix(in srgb, var(--c) 42%, rgba(18,16,32,0.92)) 0%,
+      color-mix(in srgb, var(--c) 13%, rgba(10,8,20,0.94)) 55%,
+      rgba(8,6,16,0.96) 100%);
   box-shadow:
-    0 0 18px color-mix(in srgb, var(--c) 35%, transparent),
-    inset 0 2px 10px rgba(0,0,0,0.6),
-    inset 0 0 14px color-mix(in srgb, var(--c) 12%, transparent);
+    0 0 22px color-mix(in srgb, var(--c) 44%, transparent),
+    inset 0 2px 10px rgba(0,0,0,0.55),
+    inset 0 0 16px color-mix(in srgb, var(--c) 18%, transparent);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.node-disc::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent 42%);
+  pointer-events: none;
 }
 .ring-1 .node-disc { width: 58px; height: 58px; }
 .ring-2 .node-disc { width: 50px; height: 50px; }
@@ -277,14 +299,16 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
 @keyframes tap-pop { 0% { transform: scale(0.9); } 60% { transform: scale(1.2); } 100% { transform: scale(1.16); } }
 
 .node-glyph {
+  width: 66px; height: 66px;
+  display: flex; align-items: center; justify-content: center;
   font-size: 22px;
   font-weight: bold;
   color: var(--c);
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--c) 50%, transparent));
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 58%, transparent));
   line-height: 1;
 }
-.ring-1 .node-glyph { font-size: 19px; }
-.ring-2 .node-glyph { font-size: 16px; }
+.ring-1 .node-glyph { width: 58px; height: 58px; font-size: 19px; }
+.ring-2 .node-glyph { width: 50px; height: 50px; font-size: 16px; }
 
 .node-badge {
   position: absolute;
@@ -347,15 +371,15 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
   gap: 8px;
   text-align: center;
   padding: 20px;
-  background: radial-gradient(circle at center, rgba(14,14,22,0.96) 0%, rgba(6,6,10,0.55) 74%, transparent 100%);
+  background: radial-gradient(circle at 50% 44%, rgba(22,18,40,0.96) 0%, rgba(12,10,26,0.6) 72%, transparent 100%);
   opacity: 0;
   transition: opacity 0.4s ease 0.14s;
 }
 .switcher.ready .hub { opacity: 1; }
 
-.hub-eyebrow { font-size: 8px; letter-spacing: 0.4em; color: color-mix(in srgb, var(--focus-c) 70%, #8a8578); }
-.hub-title { font-size: 15px; font-weight: bold; letter-spacing: 0.22em; color: #d4d0c4; text-shadow: 0 0 20px rgba(212,208,196,0.3); }
-.hub-sub { font-size: 9px; letter-spacing: 0.24em; color: rgba(212,208,196,0.45); text-transform: uppercase; }
+.hub-eyebrow { font-size: 8px; letter-spacing: 0.4em; color: color-mix(in srgb, var(--focus-c) 85%, #d8d3e4); }
+.hub-title { font-size: 15px; font-weight: bold; letter-spacing: 0.22em; color: color-mix(in srgb, var(--focus-c) 55%, #f4f1ea); text-shadow: 0 0 22px color-mix(in srgb, var(--focus-c) 45%, transparent); }
+.hub-sub { font-size: 9px; letter-spacing: 0.24em; color: rgba(216,211,228,0.5); text-transform: uppercase; }
 .hub-controls { display: flex; gap: 10px; margin-top: 4px; }
 
 .ctl {

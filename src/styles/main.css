@@ -3,15 +3,38 @@
   --game-scale: 0.92;
   --stage-scale: 0.92;
 
-  /* Colors */
-  --bg-dark: #06060a;
-  --bg-medium: #0a0a10;
-  --text-primary: #d4d0c4;
-  --text-dim: rgba(212, 208, 196, 0.4);
-  --accent-ember: #e85a3c;
-  --accent-frost: #3c8ee8;
-  --accent-energy: #d4d0c4;
-  --rune-color: #6a5c8a;
+  /* ── Deep-indigo substrate — lifted off near-black so the hub reads as lit
+     glass, not a void. Kept dark enough for the CRT phosphor, but with hue. ── */
+  --bg-void: #0a0812;
+  --bg-deep: #0f0b1c;
+  --bg-panel: #161228;
+  --bg-panel-hi: #1e1836;
+  --seam: rgba(190, 178, 235, 0.16);
+
+  /* Legacy aliases (point at the richer substrate) */
+  --bg-dark: #0a0812;
+  --bg-medium: #0f0b1c;
+
+  /* Text — warm bone with a faint violet lift */
+  --text-primary: #d8d3e4;
+  --text-bright: #f4f1ea;
+  --text-dim: rgba(216, 211, 228, 0.45);
+  --text-faint: rgba(216, 211, 228, 0.28);
+
+  /* Vivid accent set (shared, meaningful hues) */
+  --accent-ember: #ff6b5c;
+  --accent-amber: #ffb347;
+  --accent-gold: #ffe14c;
+  --accent-lime: #c8e64c;
+  --accent-mint: #5fe08a;
+  --accent-teal: #4cc7c0;
+  --accent-cyan: #3ad6e6;
+  --accent-frost: #5c9bff;
+  --accent-violet: #b47cff;
+  --accent-magenta: #ff5ca8;
+  --accent-rose: #ff7fd0;
+  --accent-energy: #d8d3e4;
+  --rune-color: #8a7cc8;
 }
 
 * {
@@ -50,7 +73,8 @@ html, body {
   max-height: var(--display-size);
   border-radius: 50%;
   overflow: hidden;
-  background: var(--bg-dark);
+  background:
+    radial-gradient(circle at 50% 42%, var(--bg-deep) 0%, var(--bg-void) 62%, #050409 100%);
 }
 
 /* Common button styles */
