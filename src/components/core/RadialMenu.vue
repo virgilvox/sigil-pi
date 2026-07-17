@@ -1,42 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGlobalStore } from '@/stores/global'
-import { useCircularLayout } from '@/composables/useCircularLayout'
 import { useGameCatalog } from '@/composables/useGameCatalog'
+import { useSwitcherLayout } from '@/composables/useSwitcherLayout'
+import { nodeGlyph } from '@/composables/useMonogram'
+import type { GameEntry } from '@/types'
 import CircularViewport from './CircularViewport.vue'
 import CRTOverlay from './CRTOverlay.vue'
 
+// Home launcher. Shares the adaptive radial layout + glyphs with AppSwitcher so
+// the two surfaces never drift.
 const router = useRouter()
 const globalStore = useGlobalStore()
-const { polarToCartesian } = useCircularLayout(720)
 const { games } = useGameCatalog()
 
-const hoveredGame = ref<string | null>(null)
-
-// Split the catalog across two rings, filling the outer ring first. Ring sizes
-// scale with the total count so the home screen adapts as drop-in games appear.
-const gamePositions = computed(() => {
-  const list = games.value
-  const total = list.length
-  const outerRadius = 260
-  const innerRadius = 140
-  // Up to 6 on the outer ring; remainder goes inner. Keeps spacing readable.
-  const outerCount = Math.min(total, Math.ceil(total / 2) + (total > 9 ? 1 : 0), 7)
-  const innerCount = Math.max(total - outerCount, 0)
-
-  return list.map((game, index) => {
-    const isInner = index >= outerCount
-    const radius = isInner ? innerRadius : outerRadius
-    const ringIndex = isInner ? index - outerCount : index
-    const ringCount = isInner ? Math.max(innerCount, 1) : Math.max(outerCount, 1)
-    const offset = isInner ? Math.PI / ringCount : 0
-    const angle = -Math.PI / 2 + offset + (ringIndex / ringCount) * Math.PI * 2
-
-    const pos = polarToCartesian(angle, radius)
-    return { ...game, x: pos.x, y: pos.y, angle, isInner }
-  })
-})
+const hovered = ref<string | null>(null)
+const page = ref(0)
+const { placed, pageCount } = useSwitcherLayout(games, page, 720)
 
 function navigateTo(route: string): void {
   router.push(route)
@@ -51,42 +32,43 @@ onMounted(() => {
 <template>
   <CircularViewport>
     <div class="radial-menu">
-      <!-- Background -->
       <div class="menu-bg"></div>
 
-      <!-- Center title -->
       <div class="center-content">
         <div class="title">SIGIL PI</div>
         <div class="subtitle">GAME HUB</div>
       </div>
 
-      <!-- Game options -->
-      <div
-        v-for="game in gamePositions"
-        :key="game.id"
+      <button
+        v-for="node in placed"
+        :key="(node.item as GameEntry).id"
         class="game-option"
-        :class="{ inner: game.isInner }"
+        :class="[`ring-${node.ring}`]"
         :style="{
-          left: `${game.x}px`,
-          top: `${game.y}px`,
-          '--game-color': game.color
+          left: `${node.x}px`, top: `${node.y}px`,
+          '--game-color': (node.item as GameEntry).color, '--i': node.index
         }"
-        @click="navigateTo(game.route)"
-        @mouseenter="hoveredGame = game.id"
-        @mouseleave="hoveredGame = null"
+        @click="navigateTo((node.item as GameEntry).route)"
+        @mouseenter="hovered = (node.item as GameEntry).id"
+        @mouseleave="hovered = null"
       >
-        <div class="game-circle" :class="{ hovered: hoveredGame === game.id, inner: game.isInner }">
-          <div class="game-name">{{ game.name }}</div>
-        </div>
-        <div class="game-description" :class="{ inner: game.isInner }">{{ game.description }}</div>
-      </div>
+        <span class="game-circle" :class="{ hovered: hovered === (node.item as GameEntry).id }">
+          <span class="game-glyph">{{ nodeGlyph(node.item as GameEntry) }}</span>
+          <span v-if="(node.item as GameEntry).source === 'dropin'" class="game-badge">◇</span>
+        </span>
+        <span class="game-name">{{ (node.item as GameEntry).name }}</span>
+      </button>
 
-      <!-- Decorative rings -->
       <svg class="deco-rings" viewBox="0 0 720 720">
-        <circle cx="360" cy="360" r="100" fill="none" stroke="rgba(212, 208, 196, 0.1)" stroke-width="1" />
-        <circle cx="360" cy="360" r="200" fill="none" stroke="rgba(212, 208, 196, 0.08)" stroke-width="1" />
-        <circle cx="360" cy="360" r="300" fill="none" stroke="rgba(212, 208, 196, 0.05)" stroke-width="1" />
+        <circle cx="360" cy="360" r="138" fill="none" stroke="rgba(212,208,196,0.08)" />
+        <circle cx="360" cy="360" r="210" fill="none" stroke="rgba(212,208,196,0.06)" />
+        <circle cx="360" cy="360" r="292" fill="none" stroke="rgba(212,208,196,0.04)" />
       </svg>
+
+      <div v-if="pageCount > 1" class="pager">
+        <button v-for="p in pageCount" :key="p" class="dot" :class="{ on: p - 1 === page }"
+          @click="page = p - 1"></button>
+      </div>
     </div>
     <CRTOverlay />
   </CircularViewport>
@@ -95,54 +77,21 @@ onMounted(() => {
 <style scoped>
 .radial-menu {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
 .menu-bg {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   background: radial-gradient(circle at center, #0a0a10 0%, #06060a 60%, #030306 100%);
   border-radius: 50%;
 }
-
-.center-content {
-  position: absolute;
-  text-align: center;
-  z-index: 10;
-}
-
-.title {
-  font-size: 24px;
-  font-weight: bold;
-  letter-spacing: 0.3em;
-  color: #d4d0c4;
-  text-shadow: 0 0 30px rgba(212, 208, 196, 0.3);
-  margin-bottom: 4px;
-}
-
-.subtitle {
-  font-size: 9px;
-  letter-spacing: 0.4em;
-  color: rgba(212, 208, 196, 0.4);
-}
-
-.deco-rings {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
+.center-content { position: absolute; text-align: center; z-index: 10; }
+.title { font-size: 24px; font-weight: bold; letter-spacing: 0.3em; color: #d4d0c4; text-shadow: 0 0 30px rgba(212,208,196,0.3); margin-bottom: 4px; }
+.subtitle { font-size: 9px; letter-spacing: 0.4em; color: rgba(212,208,196,0.4); }
+.deco-rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 .game-option {
   position: absolute;
@@ -150,59 +99,46 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
   cursor: pointer;
   z-index: 20;
+  font-family: 'Courier New', monospace;
+  opacity: 0;
+  animation: pop 0.45s cubic-bezier(0.16, 1.16, 0.3, 1) forwards;
+  animation-delay: calc(var(--i) * 30ms);
 }
+@keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 
 .game-circle {
-  width: 90px;
-  height: 90px;
+  position: relative;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: rgba(10, 10, 15, 0.8);
-  border: 2px solid var(--game-color);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
-  box-shadow: 0 0 20px color-mix(in srgb, var(--game-color) 30%, transparent);
+  border: 2px solid var(--game-color);
+  background: radial-gradient(circle at 38% 32%, color-mix(in srgb, var(--game-color) 24%, rgba(12,12,18,0.9)) 0%, rgba(8,8,12,0.9) 70%);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--game-color) 30%, transparent), inset 0 2px 10px rgba(0,0,0,0.55);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
-
-.game-circle.inner {
-  width: 65px;
-  height: 65px;
-}
-
-.game-circle:hover,
-.game-circle.hovered {
+.ring-1 .game-circle { width: 64px; height: 64px; }
+.ring-2 .game-circle { width: 54px; height: 54px; }
+.game-circle:hover, .game-circle.hovered {
   transform: scale(1.15);
-  background: color-mix(in srgb, var(--game-color) 20%, rgba(10, 10, 15, 0.9));
-  box-shadow: 0 0 40px color-mix(in srgb, var(--game-color) 50%, transparent);
+  box-shadow: 0 0 42px color-mix(in srgb, var(--game-color) 55%, transparent), inset 0 2px 10px rgba(0,0,0,0.5);
 }
+.game-glyph { font-size: 24px; font-weight: bold; color: var(--game-color); text-shadow: 0 0 12px color-mix(in srgb, var(--game-color) 45%, transparent); }
+.ring-1 .game-glyph { font-size: 20px; }
+.ring-2 .game-glyph { font-size: 17px; }
+.game-badge { position: absolute; top: -3px; right: -3px; font-size: 12px; color: var(--game-color); }
+.game-name { font-size: 9px; font-weight: bold; letter-spacing: 0.1em; color: var(--game-color); text-align: center; text-shadow: 0 0 8px color-mix(in srgb, var(--game-color) 35%, transparent); }
+.ring-2 .game-name { font-size: 8px; }
 
-.game-name {
-  font-size: 10px;
-  font-weight: bold;
-  letter-spacing: 0.1em;
-  color: var(--game-color);
-  text-align: center;
-  padding: 6px;
-  line-height: 1.2;
-}
-
-.game-circle.inner .game-name {
-  font-size: 8px;
-  padding: 4px;
-}
-
-.game-description {
-  margin-top: 6px;
-  font-size: 8px;
-  letter-spacing: 0.15em;
-  color: rgba(212, 208, 196, 0.5);
-  text-transform: uppercase;
-}
-
-.game-description.inner {
-  display: none;
-}
+.pager { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); display: flex; gap: 8px; }
+.dot { width: 22px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: rgba(212,208,196,0.3); transition: all 0.2s; }
+.dot.on::before { background: #d4d0c4; box-shadow: 0 0 8px rgba(212,208,196,0.6); transform: scale(1.3); }
 </style>

@@ -24,7 +24,8 @@ function toEntry(d: DropinManifestEntry): GameEntry {
     description: d.description || 'DROP-IN',
     source: 'dropin',
     order: d.order ?? 1000,
-    file: d.file
+    file: d.file,
+    icon: d.icon
   }
 }
 

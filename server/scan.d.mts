@@ -8,6 +8,7 @@ export interface DropinManifestEntry {
   color?: string
   description?: string
   order?: number
+  icon?: string
 }
 
 export function dropinsDir(): string

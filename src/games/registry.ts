@@ -63,7 +63,19 @@ export const BAKED_GAMES: BakedGame[] = [
     description: 'SYNTHESIZER',
     source: 'baked',
     order: 40,
+    icon: '♪',
     component: () => import('@/components/null-synth/NullSynthGame.vue')
+  },
+  {
+    id: 'orrery',
+    name: 'ORRERY',
+    route: '/orrery',
+    color: '#e8a13c',
+    description: 'RADIAL SEQUENCER',
+    source: 'baked',
+    order: 45,
+    icon: '☉',
+    component: () => import('@/components/orrery/OrreryGame.vue')
   },
   {
     id: 'carrom',

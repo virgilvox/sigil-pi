@@ -38,6 +38,8 @@ export interface GameEntry {
   order?: number
   /** For drop-ins: the served HTML filename under /dropins/. */
   file?: string
+  /** Optional glyph shown inside a menu node (1-2 chars or one emoji); falls back to auto initials. */
+  icon?: string
 }
 
 /** Raw drop-in descriptor returned by the runtime server's /api/games scan. */
@@ -48,6 +50,7 @@ export interface DropinManifestEntry {
   color?: string
   description?: string
   order?: number
+  icon?: string
 }
 
 // ═══════════════════════════════════════════════════════════════════

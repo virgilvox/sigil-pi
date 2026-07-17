@@ -113,7 +113,8 @@ export async function scanDropins(dir = dropinsDir()) {
       file,
       color: metaTag(html, 'sigil:color') || colorFor(id),
       description: (metaTag(html, 'sigil:description') || 'DROP-IN').toUpperCase(),
-      order: orderRaw ? Number(orderRaw) : 1000
+      order: orderRaw ? Number(orderRaw) : 1000,
+      icon: metaTag(html, 'sigil:icon') || undefined
     })
   }
   return entries
