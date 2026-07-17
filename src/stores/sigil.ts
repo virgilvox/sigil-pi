@@ -36,8 +36,9 @@ export const useSigilStore = defineStore('sigil', () => {
   const arcs = ref<Arc[]>([])
   const runes = ref<Rune[]>([])
 
-  // Input state
-  const pointer = ref<PointerState | null>(null)
+  // Input state — one entry per active touch (keyed by touch identifier; -1 = mouse),
+  // so both players can act at once and a player can rotate the ring while casting.
+  const pointers = ref<Map<number, PointerState>>(new Map())
 
   // Computed
   const player1 = computed(() => players.value[0])
@@ -511,7 +512,7 @@ export const useSigilStore = defineStore('sigil', () => {
     beams.value = []
     particles.value = []
     arcs.value = []
-    pointer.value = null
+    pointers.value.clear()
     generateBarriers(0)
     generateBarriers(1)
     generateRunes()
@@ -534,7 +535,7 @@ export const useSigilStore = defineStore('sigil', () => {
     particles,
     arcs,
     runes,
-    pointer,
+    pointers,
     // Computed
     player1,
     player2,

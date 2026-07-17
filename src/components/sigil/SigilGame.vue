@@ -423,9 +423,9 @@ function draw(): void {
     }
   }
 
-  // Aim line / Ward preview
-  if (sigilStore.pointer && sigilStore.pointer.type === 'spell' && sigilStore.pointer.spell) {
-    const ptr = sigilStore.pointer
+  // Aim line / Ward preview — render every in-flight spell drag (both players).
+  for (const ptr of sigilStore.pointers.values()) {
+    if (ptr.type !== 'spell' || !ptr.spell) continue
     const col = PLAYER_COLORS[ptr.pid!]
     const dx = ptr.x! - ptr.sx!
     const dy = ptr.y! - ptr.sy!
@@ -623,18 +623,20 @@ const { start, stop } = useGameLoop({
   render: draw
 })
 
-// Input handling
-function getCoords(e: MouseEvent | TouchEvent): { x: number; y: number } {
+// Input handling — multitouch: each touch (and the mouse, id -1) drives its own
+// pointer, so both players can rotate the ring and cast spells simultaneously.
+const MOUSE_ID = -1
+
+function coordsFor(clientX: number, clientY: number): { x: number; y: number } {
   if (!mainCanvasRef.value) return { x: 0, y: 0 }
   const rect = mainCanvasRef.value.getBoundingClientRect()
-  const touch = 'touches' in e ? (e.touches[0] || e.changedTouches[0]) : e
   return {
-    x: (touch.clientX - rect.left) / rect.width * SIZE,
-    y: (touch.clientY - rect.top) / rect.height * SIZE
+    x: (clientX - rect.left) / rect.width * SIZE,
+    y: (clientY - rect.top) / rect.height * SIZE
   }
 }
 
-function onStart(x: number, y: number): void {
+function onStart(id: number, x: number, y: number): void {
   if (!sigilStore.running) return
   const pid = sigilStore.getPlayer(x, y)
   if (pid < 0) return
@@ -647,17 +649,17 @@ function onStart(x: number, y: number): void {
   }
 
   if (sigilStore.inRing(x, y)) {
-    sigilStore.pointer = {
+    sigilStore.pointers.set(id, {
       type: 'ring',
       startAng: sigilStore.ring.angle,
       touchAng: sigilStore.ang(x, y)
-    }
+    })
     return
   }
 
   const btn = sigilStore.getBtnAt(x, y, pid)
   if (btn && sigilStore.players[pid].energy >= btn.spell.cost) {
-    sigilStore.pointer = {
+    sigilStore.pointers.set(id, {
       type: 'spell',
       pid,
       spell: btn.spell,
@@ -665,76 +667,79 @@ function onStart(x: number, y: number): void {
       sy: btn.y,
       x,
       y
-    }
+    })
   }
 }
 
-function onMove(x: number, y: number): void {
-  if (!sigilStore.pointer) return
+function onMove(id: number, x: number, y: number): void {
+  const ptr = sigilStore.pointers.get(id)
+  if (!ptr) return
 
-  if (sigilStore.pointer.type === 'ring') {
-    sigilStore.ring.target = sigilStore.pointer.startAng! + (sigilStore.ang(x, y) - sigilStore.pointer.touchAng!)
-  } else if (sigilStore.pointer.type === 'spell') {
-    sigilStore.pointer.x = x
-    sigilStore.pointer.y = y
+  if (ptr.type === 'ring') {
+    sigilStore.ring.target = ptr.startAng! + (sigilStore.ang(x, y) - ptr.touchAng!)
+  } else if (ptr.type === 'spell') {
+    ptr.x = x
+    ptr.y = y
   }
 }
 
-function onEnd(x: number, y: number): void {
-  if (!sigilStore.pointer) return
+function onEnd(id: number, x: number, y: number): void {
+  const ptr = sigilStore.pointers.get(id)
+  if (!ptr) return
 
-  if (sigilStore.pointer.type === 'spell') {
-    const dx = x - sigilStore.pointer.sx!
-    const dy = y - sigilStore.pointer.sy!
+  if (ptr.type === 'spell') {
+    const dx = x - ptr.sx!
+    const dy = y - ptr.sy!
     const dragDist = Math.sqrt(dx * dx + dy * dy)
     if (dragDist > 20) {
       sigilStore.cast(
-        sigilStore.pointer.pid!,
-        sigilStore.pointer.spell!.id as SpellId,
+        ptr.pid!,
+        ptr.spell!.id as SpellId,
         Math.atan2(dy, dx),
-        sigilStore.pointer.sx!,
-        sigilStore.pointer.sy!,
+        ptr.sx!,
+        ptr.sy!,
         x,
         y
       )
-      // Play cast SFX
       sfx.play('cast')
     }
   }
-  sigilStore.pointer = null
+  sigilStore.pointers.delete(id)
 }
 
 function handleMouseDown(e: MouseEvent): void {
-  const coords = getCoords(e)
-  onStart(coords.x, coords.y)
+  const c = coordsFor(e.clientX, e.clientY)
+  onStart(MOUSE_ID, c.x, c.y)
 }
-
 function handleMouseMove(e: MouseEvent): void {
-  const coords = getCoords(e)
-  onMove(coords.x, coords.y)
+  const c = coordsFor(e.clientX, e.clientY)
+  onMove(MOUSE_ID, c.x, c.y)
 }
-
 function handleMouseUp(e: MouseEvent): void {
-  const coords = getCoords(e)
-  onEnd(coords.x, coords.y)
+  const c = coordsFor(e.clientX, e.clientY)
+  onEnd(MOUSE_ID, c.x, c.y)
 }
 
 function handleTouchStart(e: TouchEvent): void {
   e.preventDefault()
-  const coords = getCoords(e)
-  onStart(coords.x, coords.y)
+  for (const t of Array.from(e.changedTouches)) {
+    const c = coordsFor(t.clientX, t.clientY)
+    onStart(t.identifier, c.x, c.y)
+  }
 }
-
 function handleTouchMove(e: TouchEvent): void {
   e.preventDefault()
-  const coords = getCoords(e)
-  onMove(coords.x, coords.y)
+  for (const t of Array.from(e.changedTouches)) {
+    const c = coordsFor(t.clientX, t.clientY)
+    onMove(t.identifier, c.x, c.y)
+  }
 }
-
 function handleTouchEnd(e: TouchEvent): void {
   e.preventDefault()
-  const coords = getCoords(e.changedTouches[0] as unknown as TouchEvent)
-  onEnd(coords.x, coords.y)
+  for (const t of Array.from(e.changedTouches)) {
+    const c = coordsFor(t.clientX, t.clientY)
+    onEnd(t.identifier, c.x, c.y)
+  }
 }
 
 // Game control
@@ -801,6 +806,7 @@ onUnmounted(() => {
         @touchstart="handleTouchStart"
         @touchmove="handleTouchMove"
         @touchend="handleTouchEnd"
+        @touchcancel="handleTouchEnd"
       />
 
       <!-- Energy HUDs -->
