@@ -78,6 +78,17 @@ export const BAKED_GAMES: BakedGame[] = [
     component: () => import('@/components/orrery/OrreryGame.vue')
   },
   {
+    id: 'synth-lab',
+    name: 'SYNTH LAB',
+    route: '/synth-lab',
+    color: '#4cc9a0',
+    description: 'MULTI-MODE SYNTH',
+    source: 'baked',
+    order: 42,
+    icon: '⌬',
+    component: () => import('@/components/synth-lab/SynthLabGame.vue')
+  },
+  {
     id: 'carrom',
     name: 'CARROM',
     route: '/carrom',

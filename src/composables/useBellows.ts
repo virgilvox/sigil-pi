@@ -15,7 +15,9 @@ import { Bellows, type Instrument } from 'bellowsjs'
 // the owning component calls teardown() explicitly on unmount.
 // ═══════════════════════════════════════════════════════════════════
 
-export type TrackId = 'kick' | 'snare' | 'hat' | 'bass' | 'pluck' | 'lead'
+// Voice keys are free-form strings: the orrery uses fixed drum/melody ids, while
+// Synth Lab keys voices by engine id or 'preset:<id>'.
+export type TrackId = string
 
 export interface UseBellowsOptions {
   seed?: string
@@ -71,6 +73,15 @@ export function useBellows(opts: UseBellowsOptions = {}) {
   }
   function bellows(): Bellows | null {
     return b
+  }
+
+  /** Live analyser node (post-master) for scope visuals; null before boot. */
+  function analyser(): AnalyserNode | null {
+    return b?.analyser ?? null
+  }
+  /** Latest meter frame ({ voices, peakL/R, ... }) or null. */
+  function meter(): unknown {
+    return b?.meter ?? null
   }
 
   function setBpm(n: number): void {
@@ -131,6 +142,8 @@ export function useBellows(opts: UseBellowsOptions = {}) {
     registerVoice,
     voice,
     bellows,
+    analyser,
+    meter,
     setBpm,
     setSwing,
     onStep,
