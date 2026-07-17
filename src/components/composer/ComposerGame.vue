@@ -120,8 +120,10 @@ function draw(): void {
       const isNow = cur === s
       ringSector(ctx, rg.r, BAND, a0, a1)
       if (on && !tr.mute) {
-        ctx.fillStyle = withAlpha(col, isNow ? 1 : 0.5); ctx.fill()
-        ctx.shadowColor = col; ctx.shadowBlur = isNow ? 20 : 6; ctx.fill(); ctx.shadowBlur = 0
+        // glow only the current step — per-cell shadowBlur across all rings is
+        // far too expensive on the Pi's GPU.
+        ctx.fillStyle = withAlpha(col, isNow ? 1 : 0.55); ctx.fill()
+        if (isNow) { ctx.shadowColor = col; ctx.shadowBlur = 18; ctx.fill(); ctx.shadowBlur = 0 }
       } else {
         ctx.fillStyle = on ? withAlpha(col, 0.16) : (s % 4 === 0 ? 'rgba(190,178,235,0.12)' : 'rgba(190,178,235,0.05)')
         ctx.fill()
@@ -324,7 +326,7 @@ function cycleMood(dir: number): void {
 .close-wide { padding: 9px; background: #d8d3e4; color: #12101f; border: none; border-radius: 8px; letter-spacing: 0.2em; font-size: 11px; cursor: pointer; }
 
 .title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; color: #d8d3e4; }
-.aura { position: absolute; left: 50%; top: 50%; width: 460px; height: 460px; margin: -230px 0 0 -230px; border-radius: 50%; background: conic-gradient(from 0deg, #ff6b5c, #ffb347, #5fe08a, #3ad6e6, #b47cff, #ff5ca8, #ff6b5c); filter: blur(64px); opacity: 0.22; animation: aspin 44s linear infinite; }
+.aura { position: absolute; left: 50%; top: 50%; width: 360px; height: 360px; margin: -180px 0 0 -180px; border-radius: 50%; background: conic-gradient(from 0deg, #ff6b5c, #ffb347, #5fe08a, #3ad6e6, #b47cff, #ff5ca8, #ff6b5c); filter: blur(32px); opacity: 0.24; animation: aspin 44s linear infinite; will-change: transform; }
 @keyframes aspin { to { transform: rotate(360deg); } }
 .mark { font-size: 52px; color: #eadfff; text-shadow: 0 0 34px rgba(180,124,255,0.7); z-index: 1; }
 .name { font-size: 34px; font-weight: bold; letter-spacing: 0.3em; text-indent: 0.3em; z-index: 1; background: linear-gradient(100deg, #c8e6ff, #f4f1ea 42%, #ffd6f2 72%, #c9b8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }

@@ -50,7 +50,7 @@ onUnmounted(() => {
         v-if="showHandle"
         class="menu-handle"
         aria-label="Open app switcher"
-        @click="openSwitcher"
+        @pointerdown.prevent="openSwitcher"
       >
         <span class="grip"></span>
       </button>
@@ -70,42 +70,54 @@ onUnmounted(() => {
   background: #000;
 }
 
-/* Small pill at the bottom center of the round panel — the reliable, always-on
-   switcher trigger that also works over iframe drop-in games. */
+/* Pill near the bottom of the round panel — the always-on switcher trigger (also
+   works over iframe drop-in games). Raised off the very edge (hardest place to
+   reach on round glass), enlarged, with a generous transparent hit-slop so a
+   near-miss still opens it. */
 .menu-handle {
   position: fixed;
   left: 50%;
-  bottom: calc(50% - min(50vw, 50vh) * var(--game-scale, 0.92) + 6px);
+  bottom: calc(50% - min(50vw, 50vh) * var(--game-scale, 0.92) + 30px);
   transform: translateX(-50%);
   z-index: 550;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 74px;
-  height: 26px;
-  padding: 0;
+  width: 104px;
+  height: 40px;
+  padding: 14px 22px;   /* transparent hit-slop around the visible pill */
+  box-sizing: content-box;
   border: none;
-  border-radius: 13px 13px 4px 4px;
-  background: rgba(10, 10, 15, 0.55);
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(212, 208, 196, 0.18);
+  background: none;
   cursor: pointer;
-  backdrop-filter: blur(3px);
-  opacity: 0.55;
+  touch-action: manipulation;
+  opacity: 0.85;
   transition: opacity 0.2s ease, transform 0.15s ease;
 }
+/* the visible pill */
+.menu-handle::before {
+  content: '';
+  position: absolute;
+  width: 104px;
+  height: 40px;
+  border-radius: 20px;
+  background: rgba(14, 12, 26, 0.72);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(190, 178, 235, 0.28);
+  backdrop-filter: blur(3px);
+}
 
-.menu-handle:hover,
 .menu-handle:active {
-  opacity: 0.95;
-  transform: translateX(-50%) translateY(-1px);
+  opacity: 1;
+  transform: translateX(-50%) translateY(-1px) scale(0.96);
 }
 
 .grip {
-  width: 34px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(212, 208, 196, 0.7);
-  box-shadow: 0 0 8px rgba(212, 208, 196, 0.35);
+  position: relative;
+  width: 46px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(216, 211, 228, 0.85);
+  box-shadow: 0 0 10px rgba(190, 178, 235, 0.5);
 }
 
 .handle-fade-enter-active,

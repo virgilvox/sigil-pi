@@ -24,7 +24,7 @@ const emit = defineEmits<{ start: [] }>()
 .aura {
   position: absolute; left: 50%; top: 50%; width: 480px; height: 480px; margin: -240px 0 0 -240px; border-radius: 50%;
   background: conic-gradient(from 0deg, #ff6b5c, #ffb347, #5fe08a, #3ad6e6, #5c9bff, #b47cff, #ff5ca8, #ff6b5c);
-  filter: blur(64px); opacity: 0.22; animation: aura-spin 40s linear infinite;
+  filter: blur(32px); opacity: 0.24; animation: aura-spin 40s linear infinite; will-change: transform;
 }
 @keyframes aura-spin { to { transform: rotate(360deg); } }
 .rings { position: absolute; inset: 0; }

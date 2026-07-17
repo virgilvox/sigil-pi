@@ -102,20 +102,21 @@ onMounted(() => {
 .aura {
   position: absolute;
   left: 50%; top: 50%;
-  width: 620px; height: 620px;
-  margin: -310px 0 0 -310px;
+  width: 460px; height: 460px;
+  margin: -230px 0 0 -230px;
   border-radius: 50%;
   background: conic-gradient(from 0deg,
     #ff6b5c, #ffb347, #ffe14c, #5fe08a, #4cc7c0,
     #3ad6e6, #5c9bff, #b47cff, #ff5ca8, #ff6b5c);
-  filter: blur(58px);
-  opacity: 0.22;
+  filter: blur(30px);
+  opacity: 0.26;
   animation: aura-spin 48s linear infinite;
+  will-change: transform;
   pointer-events: none;
 }
 .aura2 {
-  width: 380px; height: 380px; margin: -190px 0 0 -190px;
-  opacity: 0.16; filter: blur(46px);
+  width: 300px; height: 300px; margin: -150px 0 0 -150px;
+  opacity: 0.18; filter: blur(24px);
   animation: aura-spin 66s linear infinite reverse;
 }
 @keyframes aura-spin { to { transform: rotate(360deg); } }

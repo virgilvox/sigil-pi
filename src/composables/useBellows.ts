@@ -117,15 +117,25 @@ export function useBellows(opts: UseBellowsOptions = {}) {
     b?.panic()
   }
 
-  /** Teardown order matters: unsub clock → panic → dispose → null. */
+  /** Teardown order matters: unsub clock → panic → dispose → close ctx → null.
+   *  Closing the AudioContext is load-bearing: each app boots its own Bellows
+   *  (its own AudioContext), and Chromium caps concurrent contexts (~6) and holds
+   *  their memory — without an explicit close, switching between audio apps leaks
+   *  contexts until boot() starts failing and the Pi bogs down. */
   function teardown(): void {
     unsubClock?.()
     unsubClock = null
+    const ctx = b?.ctx ?? null
     try {
       b?.panic()
       b?.dispose()
     } catch {
       // engine may already be gone — ignore
+    }
+    try {
+      if (ctx && ctx.state !== 'closed') void ctx.close()
+    } catch {
+      // dispose() may already have closed it — ignore
     }
     b = null
     insts.clear()

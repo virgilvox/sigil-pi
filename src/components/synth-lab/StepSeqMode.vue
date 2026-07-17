@@ -118,7 +118,8 @@ function draw(): void {
     if (s.on) {
       ctx.fillStyle = withAlpha(col, isNow ? 1 : 0.4 + s.vel * 0.5)
       ctx.fill()
-      ctx.shadowColor = col; ctx.shadowBlur = isNow ? 26 : 10; ctx.fill(); ctx.shadowBlur = 0
+      // glow only the active step (per-cell shadowBlur is costly on the Pi)
+      if (isNow) { ctx.shadowColor = col; ctx.shadowBlur = 24; ctx.fill(); ctx.shadowBlur = 0 }
       const p = polar(STEP_RC, wedgeMidAngle(i, len))
       ctx.fillStyle = '#12101f'; ctx.font = 'bold 9px "Courier New", monospace'
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'

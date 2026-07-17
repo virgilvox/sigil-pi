@@ -71,8 +71,12 @@ fi
 
 # Kiosk flags: full-screen app, no chrome UI, no crash bubbles, no updates,
 # autoplay allowed (game audio), touch-friendly, let Ozone pick X11/Wayland.
-#   --password-store=basic : never prompt to unlock the login keyring on launch
-#     (that dialog otherwise pops up every relaunch and reads as a password ask).
+#   --password-store=basic : never prompt to unlock the login keyring on launch.
+#   --enable-experimental-web-platform-features : exposes navigator.bluetooth on
+#     Linux (Web Bluetooth is gated behind this flag here) so the GROMMET Muse app
+#     can connect. No-op if this Chromium build has Web Bluetooth compiled out.
+#   --touch-events=enabled + --enable-features=… : make sure the panel is treated
+#     as a real (multi-)touch device.
 FLAGS=(
   --kiosk
   --app="${URL}"
@@ -92,6 +96,8 @@ FLAGS=(
   --autoplay-policy=no-user-gesture-required
   --ozone-platform-hint=auto
   --hide-scrollbars
+  --enable-experimental-web-platform-features
+  --touch-events=enabled
 )
 
 # Relaunch on exit/crash. systemd keeps the server alive; this keeps the UI

@@ -218,14 +218,14 @@ function goPage(p: number): void { page.value = p; ready.value = false; nextTick
 /* Spectrum aura — same colorful wheel as the home menu, tinted toward focus. */
 .aura {
   position: absolute; left: 50%; top: 50%;
-  width: 600px; height: 600px; margin: -300px 0 0 -300px; border-radius: 50%;
+  width: 440px; height: 440px; margin: -220px 0 0 -220px; border-radius: 50%;
   background: conic-gradient(from 0deg,
     #ff6b5c, #ffb347, #ffe14c, #5fe08a, #4cc7c0,
     #3ad6e6, #5c9bff, #b47cff, #ff5ca8, #ff6b5c);
-  filter: blur(56px); opacity: 0.20;
-  animation: aura-spin 52s linear infinite; pointer-events: none;
+  filter: blur(30px); opacity: 0.24;
+  animation: aura-spin 52s linear infinite; will-change: transform; pointer-events: none;
 }
-.aura2 { width: 360px; height: 360px; margin: -180px 0 0 -180px; opacity: 0.15; filter: blur(44px); animation: aura-spin 72s linear infinite reverse; }
+.aura2 { width: 280px; height: 280px; margin: -140px 0 0 -140px; opacity: 0.16; filter: blur(24px); animation: aura-spin 72s linear infinite reverse; }
 @keyframes aura-spin { to { transform: rotate(360deg); } }
 
 .rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
