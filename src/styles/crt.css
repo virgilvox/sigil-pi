@@ -1,9 +1,29 @@
-/* CRT Effect Styles */
+/* CRT effect — ported from the junk-mage-circular reference.
+   Global (imported in main.ts) so :root vars apply. Bloom/halation/tint route
+   through CSS vars that default to NEUTRAL white; a game overrides them on its
+   own root to theme the glow (junk-mage sets green). */
+
+:root {
+  --phosphor-intensity: 0.14;
+  --scanline-intensity: 0.12;
+  --bloom-intensity: 0.35;
+  --halation-intensity: 0.07;
+  --vignette-intensity: 0.75;
+  --noise-intensity: 0.018;
+  --flicker-intensity: 0.02;
+  --curvature-highlight: 0.14;
+  --crt-grid: 3px;
+
+  /* Neutral tint hooks (non-junk-mage games are unharmed). */
+  --crt-bloom-rgb: 255, 255, 255;
+  --crt-halation-rgb: 255, 255, 255;
+  --crt-tint-rgb: 255, 255, 255;
+  --crt-tint-opacity: 0;
+}
 
 .crt-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -11,167 +31,173 @@
   border-radius: 50%;
   overflow: hidden;
 }
+.crt-overlay > * { position: absolute; inset: 0; }
 
-/* Scanlines */
-.crt-overlay::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+/* 1. Phosphor mask — RGB triads (the fine phosphor grid) */
+.crt-phosphor {
+  background-image:
+    radial-gradient(ellipse 33% 100% at 16% 50%, rgba(255,0,0,var(--phosphor-intensity)) 0%, transparent 50%),
+    radial-gradient(ellipse 33% 100% at 50% 50%, rgba(0,255,0,var(--phosphor-intensity)) 0%, transparent 50%),
+    radial-gradient(ellipse 33% 100% at 84% 50%, rgba(0,100,255,var(--phosphor-intensity)) 0%, transparent 50%);
+  background-size: var(--crt-grid) var(--crt-grid);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+/* 2. Slot mask — grille that gaps the triads */
+.crt-slotmask {
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(0,0,0,0.20) 2px 3px),
+    repeating-linear-gradient(0deg,  transparent 0 2px, rgba(0,0,0,0.12) 2px 3px);
+  mix-blend-mode: multiply;
+}
+
+/* 3. Scanlines — 4px period */
+.crt-scanlines {
   background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.12) 0px,
-    rgba(0, 0, 0, 0.12) 1px,
-    transparent 1px,
-    transparent 2px
-  );
-  pointer-events: none;
-  z-index: 2;
-  animation: scanline-move 10s linear infinite;
+    to bottom, transparent 0 2px, rgba(0,0,0,var(--scanline-intensity)) 2px 4px);
+  animation: crt-scanline-jitter 0.016s steps(2) infinite;
 }
+@keyframes crt-scanline-jitter { 0%,100%{transform:translateY(0)} 50%{transform:translateY(0.5px)} }
 
-@keyframes scanline-move {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(4px); }
+/* 4. Interlace */
+.crt-interlace {
+  background: repeating-linear-gradient(to bottom, transparent 0 4px, rgba(0,0,0,0.015) 4px 8px);
+  animation: crt-interlace 0.033s steps(2) infinite;
 }
+@keyframes crt-interlace { 0%{opacity:1} 50%{opacity:0.97} }
 
-/* Vignette + Bubble screen edge darkening */
-.crt-overlay::after {
-  content: '';
-  position: absolute;
-  top: -5%;
-  left: -5%;
-  width: 110%;
-  height: 110%;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 0%,
-    transparent 50%,
-    rgba(0, 0, 0, 0.15) 70%,
-    rgba(0, 0, 0, 0.5) 85%,
-    rgba(0, 0, 0, 0.85) 100%
-  );
-  pointer-events: none;
-  z-index: 3;
+/* 5. Scan beam */
+.crt-beam {
+  left: 0; right: 0; top: -8px; bottom: auto; height: 8px; inset: auto;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.03) 50%, transparent);
+  animation: crt-beam 8s linear infinite;
 }
+@keyframes crt-beam { 0%{top:-8px} 100%{top:100%} }
 
-/* Screen curvature / bubble effect */
-.crt-bubble {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 0%,
-    transparent 65%,
-    rgba(60, 80, 100, 0.04) 80%,
-    rgba(40, 60, 80, 0.1) 92%,
-    rgba(20, 40, 60, 0.2) 100%
-  );
+/* 6. Chromatic aberration (edge fringes) */
+.crt-chroma-r, .crt-chroma-g, .crt-chroma-b { border-radius: 50%; }
+.crt-chroma-r {
+  background: radial-gradient(ellipse at 48% 48%, transparent 0 82%, rgba(255,0,0,0.04) 88%, rgba(255,0,0,0.09) 94%, rgba(255,0,0,0.15) 100%);
+  animation: crt-chroma-r 7s ease-in-out infinite;
+}
+.crt-chroma-g {
+  background: radial-gradient(ellipse at 50% 50%, transparent 0 85%, rgba(0,255,0,0.025) 90%, rgba(0,255,0,0.06) 95%, rgba(0,255,0,0.1) 100%);
+  animation: crt-chroma-g 11s ease-in-out infinite;
+}
+.crt-chroma-b {
+  background: radial-gradient(ellipse at 52% 52%, transparent 0 80%, rgba(0,100,255,0.045) 86%, rgba(0,100,255,0.1) 93%, rgba(0,100,255,0.16) 100%);
+  animation: crt-chroma-b 9s ease-in-out infinite;
+}
+@keyframes crt-chroma-r {0%,100%{transform:translate(0,0)}25%{transform:translate(-2px,.6px)}50%{transform:translate(-1.2px,-.6px)}75%{transform:translate(-2.5px,1.2px)}}
+@keyframes crt-chroma-g {0%,100%{transform:translate(0,0)}33%{transform:translate(.6px,-.6px)}66%{transform:translate(-.6px,.6px)}}
+@keyframes crt-chroma-b {0%,100%{transform:translate(0,0)}20%{transform:translate(1.2px,.6px)}40%{transform:translate(1.8px,-.6px)}60%{transform:translate(.6px,1px)}80%{transform:translate(1.2px,-1px)}}
+
+/* 7. Halation — themeable */
+.crt-halation {
+  background: radial-gradient(ellipse at center,
+    rgba(var(--crt-halation-rgb), var(--halation-intensity)) 0%,
+    rgba(var(--crt-halation-rgb), calc(var(--halation-intensity)*0.5)) 30%, transparent 65%);
+  mix-blend-mode: soft-light;
+  animation: crt-halation 3.5s ease-in-out infinite;
+}
+@keyframes crt-halation {0%,100%{opacity:.5}50%{opacity:.75}}
+
+/* 8. Bloom — themeable */
+.crt-bloom {
   box-shadow:
-    inset 0 0 80px rgba(255, 255, 255, 0.02),
-    inset 0 0 150px rgba(80, 100, 130, 0.03),
-    inset 0 -40px 60px rgba(0, 0, 0, 0.1),
-    inset 0 40px 60px rgba(255, 255, 255, 0.02);
+    inset 0 0 100px rgba(var(--crt-bloom-rgb), calc(var(--bloom-intensity)*0.06)),
+    inset 0 0 200px rgba(var(--crt-bloom-rgb), calc(var(--bloom-intensity)*0.03));
+  mix-blend-mode: screen;
+  animation: crt-bloom 2.8s ease-in-out infinite;
 }
+@keyframes crt-bloom {0%,100%{opacity:.7}50%{opacity:.95}}
 
-/* Glass reflection */
-.crt-reflection {
-  position: absolute;
-  top: 5%;
-  left: 15%;
-  width: 35%;
-  height: 20%;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(255, 255, 255, 0.01) 50%,
-    transparent 100%
-  );
+/* 9. Glass bubble curvature highlight */
+.crt-glass {
   border-radius: 50%;
-  pointer-events: none;
-  z-index: 4;
-  filter: blur(8px);
+  background:
+    radial-gradient(ellipse 55% 45% at 25% 20%, rgba(255,255,255,var(--curvature-highlight)) 0%, rgba(255,255,255,calc(var(--curvature-highlight)*0.35)) 35%, transparent 65%),
+    radial-gradient(ellipse 35% 30% at 75% 80%, rgba(255,255,255,calc(var(--curvature-highlight)*0.2)) 0%, transparent 55%),
+    radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.1) 70%, rgba(0,0,0,0.25) 88%, rgba(0,0,0,0.5) 100%);
 }
 
-/* RGB sweep bar */
-.crt-sweep {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 8px;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(255, 0, 0, 0.03) 20%,
-    rgba(0, 255, 0, 0.03) 50%,
-    rgba(0, 0, 255, 0.03) 80%,
-    transparent 100%
-  );
-  pointer-events: none;
-  z-index: 7;
-  animation: sweep-down 8s linear infinite;
-  opacity: 0.7;
+/* 10. Vignette */
+.crt-vignette {
+  border-radius: 50%;
+  box-shadow: inset 0 0 80px 30px rgba(0,0,0,0.5), inset 0 0 200px 60px rgba(0,0,0,0.25);
 }
 
-@keyframes sweep-down {
-  0% { top: -10%; opacity: 0; }
-  5% { opacity: 0.7; }
-  95% { opacity: 0.7; }
-  100% { top: 105%; opacity: 0; }
-}
-
-/* CRT Noise canvas */
+/* 11. Static noise — pure-CSS SVG (replaces the JS rAF canvas) */
 .crt-noise {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 6;
-  opacity: 0.03;
+  opacity: var(--noise-intensity);
+  animation: crt-noise 0.08s steps(8) infinite;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes crt-noise {
+  0%{transform:translate(0,0)}12.5%{transform:translate(-2%,1%)}25%{transform:translate(1%,-2%)}
+  37.5%{transform:translate(-1%,2%)}50%{transform:translate(2%,1%)}62.5%{transform:translate(-2%,-1%)}
+  75%{transform:translate(1%,2%)}87.5%{transform:translate(-1%,-2%)}
+}
+
+/* 12. Moire */
+.crt-moire {
+  background: repeating-linear-gradient(0deg, transparent 0 11px, rgba(255,255,255,0.008) 12px);
+  animation: crt-moire 2s linear infinite;
+  opacity: 0.4;
+}
+@keyframes crt-moire {0%{background-position:0 0}100%{background-position:0 12px}}
+
+/* 13. Horizontal distortion */
+.crt-hdistort { animation: crt-hwobble 4s ease-in-out infinite; }
+@keyframes crt-hwobble {0%,100%{transform:scaleX(1)}50%{transform:scaleX(1.001)}}
+
+/* 14. Global flicker */
+.crt-flicker {
+  background: rgba(255,255,255,var(--flicker-intensity));
+  animation: crt-flicker 0.12s steps(3) infinite;
   mix-blend-mode: overlay;
 }
+@keyframes crt-flicker {0%,100%{opacity:0}50%{opacity:1}}
 
-/* Flicker animation */
-@keyframes crt-flicker {
-  0%, 100% { opacity: 1; filter: brightness(1); }
-  41% { opacity: 1; }
-  42% { opacity: 0.97; filter: brightness(0.98); }
-  43% { opacity: 1; filter: brightness(1); }
-  67% { opacity: 1; }
-  68% { opacity: 0.98; }
-  69% { opacity: 1; }
-  92% { opacity: 1; }
-  93% { opacity: 0.96; filter: brightness(0.97); }
-  94% { opacity: 0.99; filter: brightness(1.01); }
-  95% { opacity: 1; filter: brightness(1); }
+/* 15. Color temperature tint — OFF by default; junk-mage re-enables */
+.crt-tint {
+  background: radial-gradient(ellipse at center,
+    rgba(var(--crt-tint-rgb), 0.012) 0%, rgba(var(--crt-tint-rgb), 0.008) 50%, transparent 100%);
+  mix-blend-mode: screen;
+  opacity: var(--crt-tint-opacity);
 }
 
-.crt-enabled {
-  animation: crt-flicker 5s infinite;
+/* 16. Bezel shadow */
+.crt-bezel {
+  border-radius: 50%;
+  box-shadow: inset 0 0 25px 8px rgba(0,0,0,0.5), inset 0 0 50px 15px rgba(0,0,0,0.2);
 }
 
-/* Performance mode - disable heavy effects */
-.perf-mode .crt-noise,
-.perf-mode .crt-sweep,
-.perf-mode .crt-reflection {
-  display: none;
-}
+/* Performance mode: drop animated/expensive layers, keep cheap static structure. */
+.crt-overlay.perf-mode .crt-interlace,
+.crt-overlay.perf-mode .crt-beam,
+.crt-overlay.perf-mode .crt-chroma-r,
+.crt-overlay.perf-mode .crt-chroma-g,
+.crt-overlay.perf-mode .crt-chroma-b,
+.crt-overlay.perf-mode .crt-halation,
+.crt-overlay.perf-mode .crt-bloom,
+.crt-overlay.perf-mode .crt-noise,
+.crt-overlay.perf-mode .crt-moire,
+.crt-overlay.perf-mode .crt-hdistort,
+.crt-overlay.perf-mode .crt-flicker { display: none; }
+.crt-overlay.perf-mode .crt-scanlines { animation: none; }
 
-.perf-mode .crt-enabled {
-  animation: none;
+/* Whole-screen flicker on the viewport (CircularViewport adds .crt-enabled). */
+@keyframes crt-screen-flicker {
+  0%,100%{opacity:1;filter:brightness(1)} 41%{opacity:1}
+  42%{opacity:.98;filter:brightness(.99)} 43%{opacity:1;filter:brightness(1)}
+  92%{opacity:1} 93%{opacity:.97;filter:brightness(.98)} 95%{opacity:1;filter:brightness(1)}
 }
+.crt-enabled { animation: crt-screen-flicker 6s infinite; }
+.perf-mode.crt-enabled { animation: none; }
 
-.perf-mode .crt-overlay::before {
-  animation: none;
+@media (prefers-reduced-motion: reduce) {
+  .crt-scanlines, .crt-interlace, .crt-beam, .crt-chroma-r, .crt-chroma-g, .crt-chroma-b,
+  .crt-halation, .crt-bloom, .crt-noise, .crt-moire, .crt-hdistort, .crt-flicker, .crt-enabled { animation: none; }
 }

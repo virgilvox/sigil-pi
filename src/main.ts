@@ -7,6 +7,7 @@ import '@fontsource/vt323'
 import '@fontsource/silkscreen/400.css'
 import '@fontsource/silkscreen/700.css'
 import './styles/main.css'
+import './styles/crt.css'
 
 const app = createApp(App)
 

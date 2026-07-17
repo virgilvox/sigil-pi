@@ -423,14 +423,14 @@ onUnmounted(() => {
               stroke-dashoffset="-748"
             />
           </svg>
-        </div>
-
-        <!-- HP Text -->
-        <div class="hp-text monster-hp">
-          {{ store.monster?.currentHp || 0 }}/{{ store.monster?.maxHp || 0 }}
-        </div>
-        <div class="hp-text mage-hp">
-          {{ store.mageHp }}/{{ store.mageMaxHp }}
+          <!-- HP Text — nested inside .hp-ring so it anchors to the 580 ring
+               (matching the reference), landing just below each arc. -->
+          <div class="hp-text monster-hp">
+            {{ store.monster?.currentHp || 0 }}/{{ store.monster?.maxHp || 0 }}
+          </div>
+          <div class="hp-text mage-hp">
+            {{ store.mageHp }}/{{ store.mageMaxHp }}
+          </div>
         </div>
 
         <!-- Monster Zone -->
@@ -641,8 +641,9 @@ onUnmounted(() => {
         @exit="exitToTitle"
         @between-choice="betweenChoice"
       />
+      <!-- Inside .junk-mage-game so the green CRT tint vars inherit to the overlay. -->
+      <CRTOverlay />
     </div>
-    <CRTOverlay />
   </CircularViewport>
 </template>
 
@@ -656,6 +657,12 @@ onUnmounted(() => {
   background: radial-gradient(circle at center, #1a1a1a 0%, #0a0a0a 70%, #000 100%);
   font-family: 'VT323', monospace;
   color: #e0e0e0;
+
+  /* Junk Mage's green-phosphor CRT tint (the shared CRT defaults to neutral). */
+  --crt-bloom-rgb: 0, 255, 136;
+  --crt-halation-rgb: 200, 255, 200;
+  --crt-tint-rgb: 0, 255, 100;
+  --crt-tint-opacity: 1;
 }
 
 /* Screens */
@@ -916,6 +923,8 @@ onUnmounted(() => {
 }
 
 .monster-sprite {
+  display: block;
+  position: static;   /* override the global `canvas{position:absolute}` in main.css */
   width: 64px;
   height: 64px;
   image-rendering: pixelated;
@@ -1231,6 +1240,8 @@ onUnmounted(() => {
 }
 
 .mage-sprite {
+  display: block;
+  position: static;   /* override the global `canvas{position:absolute}` in main.css */
   width: 44px;
   height: 44px;
   image-rendering: pixelated;
