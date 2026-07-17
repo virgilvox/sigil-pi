@@ -256,6 +256,8 @@ onUnmounted(() => {
   // Keyboard event listeners
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('keyup', handleKeyUp)
+
+  store.dispose()   // tear down the bellows engine (unsub clock → panic → dispose)
 })
 </script>
 

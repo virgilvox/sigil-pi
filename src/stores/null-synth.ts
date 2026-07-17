@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useBellows } from '@/composables/useBellows'
+import type { Bellows, Instrument } from 'bellowsjs'
 
 export type SuitId = 'circuit' | 'signal' | 'code' | 'maker' | 'emergence' | 'glitch'
 
@@ -18,15 +20,17 @@ interface SequenceNote {
   suit: SuitId
 }
 
-interface SuitSound {
-  type: OscillatorType
-  octave: number
+// Each suit is a subtractive dual-osc-with-lowpass voice — exactly the bellowsjs
+// `va` (Virtual Analog) engine (shape 0 saw/1 square/2 triangle/3 sine).
+interface SuitPreset {
+  shape: number
+  cutoff: number
+  resonance: number
   attack: number
   decay: number
   sustain: number
   release: number
-  filterFreq: number
-  filterQ: number
+  octave: number
 }
 
 const SIGIL_DEFS: Record<SuitId, { color: string; sigils: Record<string, { svg: string }> }> = {
@@ -107,36 +111,31 @@ const SUIT_COLORS: Record<SuitId, string> = {
   glitch: '#ff00aa'
 }
 
-const SUIT_SOUNDS: Record<SuitId, SuitSound> = {
-  circuit: { type: 'sawtooth', octave: -1, attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, filterFreq: 600, filterQ: 3 },
-  signal: { type: 'sine', octave: 0, attack: 0.05, decay: 0.2, sustain: 0.6, release: 0.5, filterFreq: 2000, filterQ: 1 },
-  code: { type: 'square', octave: 0, attack: 0.005, decay: 0.15, sustain: 0.3, release: 0.2, filterFreq: 1200, filterQ: 5 },
-  maker: { type: 'triangle', octave: -1, attack: 0.001, decay: 0.2, sustain: 0.1, release: 0.15, filterFreq: 800, filterQ: 2 },
-  emergence: { type: 'sine', octave: 0, attack: 0.2, decay: 0.4, sustain: 0.7, release: 0.8, filterFreq: 1500, filterQ: 0.7 },
-  glitch: { type: 'sawtooth', octave: 1, attack: 0.001, decay: 0.1, sustain: 0.2, release: 0.1, filterFreq: 3000, filterQ: 12 }
+const SUIT_PRESETS: Record<SuitId, SuitPreset> = {
+  circuit:   { shape: 0, cutoff: 600,  resonance: 0.25, attack: 0.01,  decay: 0.3,  sustain: 0.4, release: 0.3,  octave: -1 },
+  signal:    { shape: 3, cutoff: 2000, resonance: 0.08, attack: 0.05,  decay: 0.2,  sustain: 0.6, release: 0.5,  octave: 0 },
+  code:      { shape: 1, cutoff: 1200, resonance: 0.42, attack: 0.005, decay: 0.15, sustain: 0.3, release: 0.2,  octave: 0 },
+  maker:     { shape: 2, cutoff: 800,  resonance: 0.17, attack: 0.001, decay: 0.2,  sustain: 0.1, release: 0.15, octave: -1 },
+  emergence: { shape: 3, cutoff: 1500, resonance: 0.06, attack: 0.2,   decay: 0.4,  sustain: 0.7, release: 0.8,  octave: 0 },
+  glitch:    { shape: 0, cutoff: 3000, resonance: 1.0,  attack: 0.001, decay: 0.1,  sustain: 0.2, release: 0.1,  octave: 1 }
 }
 
 const SCALE = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33]
 
 export const useNullSynthStore = defineStore('null-synth', () => {
-  // Audio state
-  let audioCtx: AudioContext | null = null
-  let masterGain: GainNode | null = null
-  let filter: BiquadFilterNode | null = null
-  let compressor: DynamicsCompressorNode | null = null
-  let reverb: ConvolverNode | null = null
-  let reverbGain: GainNode | null = null
-  let delay: DelayNode | null = null
-  let delayFeedback: GainNode | null = null
-  let delayGain: GainNode | null = null
-  let noiseBuffer: AudioBuffer | null = null
+  // bellowsjs engine — non-reactive audio objects live in closures / a plain Map.
+  const engine = useBellows({ seed: 'null-synth', bpm: 120 })
+  const voices = new Map<SuitId, Instrument>()
+  let noiseVoice: Instrument | null = null
+  let reverbBus: ReturnType<Bellows['bus']> | null = null
+  let echoBus: ReturnType<Bellows['bus']> | null = null
 
   // State
-  const initialized = ref(false)
+  const initialized = engine.ready
   const showTitle = ref(true)
   const currentSuit = ref<SuitId>('emergence')
-  const bpm = ref(120)
-  const isPlaying = ref(false)
+  const bpm = engine.bpm            // reuse the engine's reactive transport bpm
+  const isPlaying = engine.playing  // reflects the sequencer transport
   const currentStep = ref(0)
   const sequence = ref<(SequenceNote | null)[]>(new Array(16).fill(null))
   const activePads = ref<Set<string>>(new Set())
@@ -162,155 +161,58 @@ export const useNullSynthStore = defineStore('null-synth', () => {
   })
 
   // Actions
-  function createReverbImpulse(duration: number, decay: number): AudioBuffer {
-    if (!audioCtx) throw new Error('Audio not initialized')
-    const length = audioCtx.sampleRate * duration
-    const impulse = audioCtx.createBuffer(2, length, audioCtx.sampleRate)
-    for (let ch = 0; ch < 2; ch++) {
-      const data = impulse.getChannelData(ch)
-      for (let i = 0; i < length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay)
-      }
-    }
-    return impulse
-  }
 
-  function createNoiseBuffer(): void {
-    if (!audioCtx) return
-    const bufferSize = audioCtx.sampleRate * 2
-    noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
-    const data = noiseBuffer.getChannelData(0)
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1
-    }
-  }
-
-  async function initAudio(): Promise<void> {
-    if (initialized.value) return
-
-    audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-
-    masterGain = audioCtx.createGain()
-    masterGain.gain.value = 0.7
-
-    compressor = audioCtx.createDynamicsCompressor()
-    compressor.threshold.value = -20
-    compressor.ratio.value = 4
-
-    filter = audioCtx.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = 2000
-    filter.Q.value = 1
-
-    reverb = audioCtx.createConvolver()
-    reverb.buffer = createReverbImpulse(2, 2.5)
-
-    reverbGain = audioCtx.createGain()
-    reverbGain.gain.value = 0.2
-
-    delay = audioCtx.createDelay(1)
-    delay.delayTime.value = 0.2
-
-    delayFeedback = audioCtx.createGain()
-    delayFeedback.gain.value = 0.25
-
-    delayGain = audioCtx.createGain()
-    delayGain.gain.value = 0.15
-
-    // Connect nodes
-    masterGain.connect(filter)
-    filter.connect(compressor)
-    compressor.connect(audioCtx.destination)
-    compressor.connect(reverb)
-    reverb.connect(reverbGain)
-    reverbGain.connect(audioCtx.destination)
-    compressor.connect(delay)
-    delay.connect(delayFeedback)
-    delayFeedback.connect(delay)
-    delay.connect(delayGain)
-    delayGain.connect(audioCtx.destination)
-
-    createNoiseBuffer()
-    initialized.value = true
+  // Build the 6 suit voices + reverb/delay sends once, right after boot.
+  function buildKit(bell: Bellows): void {
+    bell.masterGain(0.7)
+    bell.masterFx(['limiter', { ceiling: -1 }])
+    reverbBus = bell.bus([['plate', { mix: 0.2, decay: 2.5 }]], { level: 0.9 })
+    echoBus = bell.bus([['tapeDelay', { time: 0.2, feedback: 0.25, mix: 0.15 }]], { level: 0.8 })
+    voices.clear()
+    ;(Object.keys(SUIT_PRESETS) as SuitId[]).forEach(suit => {
+      const p = SUIT_PRESETS[suit]
+      const inst = bell.voice('va', {
+        shape: p.shape, detune: 7, sub: 0,
+        cutoff: p.cutoff, resonance: p.resonance,
+        attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release
+      }, { polyphony: 8 })
+      inst.send(reverbBus!, 0.2)
+      inst.send(echoBus!, 0.15)
+      voices.set(suit, inst)
+    })
+    noiseVoice = bell.voice('noise', {}, { polyphony: 4 })
+    noiseVoice.send(reverbBus!, 0.1)
   }
 
   function setFilterParams(x: number, y: number): void {
-    if (filter && audioCtx) {
-      const now = audioCtx.currentTime
-      filter.frequency.setTargetAtTime(200 + x * 7800, now, 0.05)
-      filter.Q.setTargetAtTime(0.5 + (1 - y) * 14.5, now, 0.05)
+    // The old master lowpass is realized as a live per-voice brightness sweep.
+    const cutoff = 200 + x * 7800
+    const resonance = Math.min(1, (0.5 + (1 - y) * 14.5) / 12)
+    for (const inst of voices.values()) {
+      inst.param('cutoff', cutoff)
+      inst.param('resonance', resonance)
     }
     xyPosition.value = { x, y }
   }
 
-  function playNote(noteIndex: number, suit: SuitId = 'emergence'): void {
-    if (!initialized.value || !audioCtx || !masterGain) return
-
-    const sound = SUIT_SOUNDS[suit]
-    const now = audioCtx.currentTime
-
-    let freq = SCALE[noteIndex % SCALE.length]
-    if (sound.octave) freq *= Math.pow(2, sound.octave)
-
-    const gain = audioCtx.createGain()
-    const noteFilter = audioCtx.createBiquadFilter()
-    noteFilter.type = 'lowpass'
-    noteFilter.frequency.value = sound.filterFreq
-    noteFilter.Q.value = sound.filterQ
-
-    const totalTime = sound.attack + sound.decay + sound.release + 0.5
-
-    gain.gain.setValueAtTime(0, now)
-    gain.gain.linearRampToValueAtTime(0.35, now + sound.attack)
-    gain.gain.linearRampToValueAtTime(sound.sustain * 0.35, now + sound.attack + sound.decay)
-    gain.gain.setValueAtTime(sound.sustain * 0.35, now + sound.attack + sound.decay + 0.3)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + totalTime)
-
-    // Glitch noise
-    if (suit === 'glitch' && Math.random() > 0.5 && noiseBuffer) {
-      const noise = audioCtx.createBufferSource()
-      noise.buffer = noiseBuffer
-      const noiseGain = audioCtx.createGain()
-      const noiseFilter = audioCtx.createBiquadFilter()
-      noiseFilter.type = 'bandpass'
-      noiseFilter.frequency.value = freq * 2
-      noiseFilter.Q.value = 10
-      noiseGain.gain.setValueAtTime(0.1, now)
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
-      noise.connect(noiseFilter)
-      noiseFilter.connect(noiseGain)
-      noiseGain.connect(masterGain)
-      noise.start(now)
-      noise.stop(now + 0.2)
+  function playNote(noteIndex: number, suit: SuitId = 'emergence', at?: number): void {
+    const inst = voices.get(suit)
+    if (!inst) return
+    const p = SUIT_PRESETS[suit]
+    const freq = SCALE[noteIndex % SCALE.length] * Math.pow(2, p.octave)
+    inst.note({ hz: freq }, { at, dur: { seconds: p.attack + p.decay + 0.3 }, vel: 0.8 })
+    if (suit === 'glitch' && noiseVoice && Math.random() > 0.5) {
+      noiseVoice.note({ hz: freq * 2 }, { at, dur: { seconds: 0.15 }, vel: 0.4 })
     }
+  }
 
-    const osc = audioCtx.createOscillator()
-    osc.type = sound.type
-    osc.frequency.value = freq
-
-    const osc2 = audioCtx.createOscillator()
-    osc2.type = sound.type
-    osc2.frequency.value = freq * 1.004
-
-    const oscGain = audioCtx.createGain()
-    oscGain.gain.value = 0.5
-
-    osc.connect(noteFilter)
-    osc2.connect(oscGain)
-    oscGain.connect(noteFilter)
-    noteFilter.connect(gain)
-    gain.connect(masterGain)
-
-    // Pitch envelope for maker/circuit
-    if (suit === 'maker' || suit === 'circuit') {
-      osc.frequency.setValueAtTime(freq * 1.5, now)
-      osc.frequency.exponentialRampToValueAtTime(freq, now + 0.05)
-    }
-
-    osc.start(now)
-    osc2.start(now)
-    osc.stop(now + totalTime + 0.1)
-    osc2.stop(now + totalTime + 0.1)
+  // The 16th-note clock IS the sequencer (replaces the old setInterval). Runs only
+  // while the transport is started; advances currentStep and replays recorded notes.
+  function scheduler(t: number, tick: number): void {
+    const step = tick % 16
+    const note = sequence.value[step]
+    if (note) playNote(note.note, note.suit, t)
+    currentStep.value = step
   }
 
   function triggerPad(noteIndex: number, suit: SuitId, padKey: string): void {
@@ -332,36 +234,12 @@ export const useNullSynthStore = defineStore('null-synth', () => {
     currentSuit.value = suit
   }
 
-  let sequencerInterval: ReturnType<typeof setInterval> | null = null
-
-  function startSequencer(): void {
-    isPlaying.value = true
-    currentStep.value = 0
-    sequencerInterval = setInterval(advanceStep, (60 / bpm.value) * 250)
-  }
-
-  function stopSequencer(): void {
-    isPlaying.value = false
-    if (sequencerInterval) {
-      clearInterval(sequencerInterval)
-      sequencerInterval = null
-    }
-  }
-
   function toggleSequencer(): void {
     if (isPlaying.value) {
-      stopSequencer()
+      engine.stop()
     } else {
-      startSequencer()
+      engine.start()
     }
-  }
-
-  function advanceStep(): void {
-    const note = sequence.value[currentStep.value]
-    if (note) {
-      playNote(note.note, note.suit)
-    }
-    currentStep.value = (currentStep.value + 1) % 16
   }
 
   function clearSequence(): void {
@@ -373,31 +251,37 @@ export const useNullSynthStore = defineStore('null-synth', () => {
   }
 
   function setBpm(newBpm: number): void {
-    bpm.value = Math.max(60, Math.min(200, newBpm))
-    if (isPlaying.value) {
-      stopSequencer()
-      startSequencer()
-    }
+    engine.setBpm(Math.max(60, Math.min(200, newBpm)))
   }
 
+  /** Boot the engine from the title-tap gesture, then arm the sequencer clock. */
   async function start(): Promise<void> {
-    await initAudio()
-    if (audioCtx?.state === 'suspended') {
-      await audioCtx.resume()
-    }
+    engine.configure(buildKit)
+    await engine.boot()
+    engine.onStep(scheduler)          // 16n clock; silent until engine.start()
     showTitle.value = false
-    setTimeout(() => playNote(5, 'emergence'), 300)
+    setTimeout(() => playNote(5, 'emergence'), 300)   // welcome blip
   }
 
   function reset(): void {
-    stopSequencer()
+    // UI reset only — keeps the engine booted while on the title.
+    engine.stop()
     showTitle.value = true
     currentSuit.value = 'emergence'
-    bpm.value = 120
+    engine.setBpm(120)
     sequence.value = new Array(16).fill(null)
     currentStep.value = 0
     activePads.value.clear()
     xyPosition.value = { x: 0.5, y: 0.5 }
+  }
+
+  function dispose(): void {
+    engine.teardown()
+    voices.clear()
+    noiseVoice = null
+    reverbBus = null
+    echoBus = null
+    currentStep.value = 0
   }
 
   return {
@@ -417,7 +301,6 @@ export const useNullSynthStore = defineStore('null-synth', () => {
     xyPosition,
 
     // Actions
-    initAudio,
     start,
     setFilterParams,
     playNote,
@@ -428,6 +311,7 @@ export const useNullSynthStore = defineStore('null-synth', () => {
     clearSequence,
     clearStep,
     setBpm,
-    reset
+    reset,
+    dispose
   }
 })
