@@ -35,8 +35,9 @@ export function stageGradient(
   ctx: CanvasRenderingContext2D, cx = 360, cy = 360, r = 360, accent?: string
 ): CanvasGradient {
   const g = ctx.createRadialGradient(cx, cy - 30, 30, cx, cy, r)
-  g.addColorStop(0, accent ? mix(accent, BG.deep, 0.14) : BG.deep)
-  g.addColorStop(0.55, BG.void)
+  // mostly deep substrate with a faint wash of the engine/family accent
+  g.addColorStop(0, accent ? mix(BG.deep, accent, 0.16) : BG.deep)
+  g.addColorStop(0.5, BG.void)
   g.addColorStop(1, '#050409')
   return g
 }
@@ -159,9 +160,12 @@ export function mix(a: string, b: string, t: number): string {
   const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t)
   return `rgb(${r},${g},${bl})`
 }
-export function withAlpha(hex: string, a: number): string {
-  const p = hexRgb(hex)
-  return p ? `rgba(${p[0]},${p[1]},${p[2]},${a})` : hex
+export function withAlpha(color: string, a: number): string {
+  // hsl(H S% L%) → hsl(H S% L% / a)  (CSS Color 4, supported by canvas)
+  if (color.startsWith('hsl(')) return color.replace(/^hsl\(([^)]+)\)$/, `hsl($1 / ${a})`)
+  if (color.startsWith('rgb(')) return color.replace(/^rgb\(([^)]+)\)$/, `rgba($1, ${a})`)
+  const p = hexRgb(color)
+  return p ? `rgba(${p[0]},${p[1]},${p[2]},${a})` : color
 }
 function hexRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
