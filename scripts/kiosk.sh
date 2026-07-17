@@ -10,7 +10,17 @@ set -u
 PORT="${SIGIL_PORT:-8080}"
 URL="http://localhost:${PORT}"
 
-# Avoid a second instance if more than one autostart hook fires (labwc + XDG).
+# ── single instance ────────────────────────────────────────────────
+# setup.sh installs autostart hooks for labwc, wayfire AND XDG; on some
+# sessions more than one fires. A flock guarantees exactly one kiosk loop —
+# two Chromiums sharing one --user-data-dir crash-loop over the profile lock,
+# which looks exactly like "loads then keeps restarting". The pgrep is a
+# secondary guard for older behaviour.
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/sigil-kiosk.lock"
+exec 9>"$LOCK" 2>/dev/null || true
+if command -v flock >/dev/null 2>&1; then
+  flock -n 9 || { echo "[sigil-kiosk] another instance holds the lock; exiting" >&2; exit 0; }
+fi
 if pgrep -f "sigil-kiosk-instance" >/dev/null 2>&1; then
   exit 0
 fi
@@ -44,11 +54,14 @@ fi
 
 # Kiosk flags: full-screen app, no chrome UI, no crash bubbles, no updates,
 # autoplay allowed (game audio), touch-friendly, let Ozone pick X11/Wayland.
+#   --password-store=basic : never prompt to unlock the login keyring on launch
+#     (that dialog otherwise pops up every relaunch and reads as a password ask).
 FLAGS=(
   --kiosk
   --app="${URL}"
   --class=sigil-kiosk-instance
   --user-data-dir="${HOME}/.config/sigil-kiosk"
+  --password-store=basic
   --noerrdialogs
   --disable-infobars
   --disable-session-crashed-bubble
@@ -64,8 +77,19 @@ FLAGS=(
   --hide-scrollbars
 )
 
-# Relaunch on exit/crash. systemd keeps the server alive; this keeps the UI alive.
+# Relaunch on exit/crash. systemd keeps the server alive; this keeps the UI
+# alive. Chromium output is logged (so a crash is diagnosable), and if it dies
+# almost immediately we back off instead of hammering a hard failure.
+LOG="${HOME}/.config/sigil-kiosk/kiosk.log"
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 while true; do
-  "$CHROME" "${FLAGS[@]}" "${URL}" >/dev/null 2>&1 || true
-  sleep 2
+  start="$(date +%s)"
+  "$CHROME" "${FLAGS[@]}" "${URL}" >>"$LOG" 2>&1 || true
+  end="$(date +%s)"
+  if [ "$((end - start))" -lt 5 ]; then
+    echo "[sigil-kiosk] chromium exited after $((end - start))s — backing off 5s (see $LOG)" >&2
+    sleep 5
+  else
+    sleep 2
+  fi
 done
