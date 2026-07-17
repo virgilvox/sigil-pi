@@ -32,6 +32,8 @@ export const APP_ICONS: Record<string, string> = {
   'videos': '<rect x="18" y="26" width="64" height="48" rx="7"/><path d="M42 40 L62 50 L42 60 Z"/><path d="M18 34 L82 34"/>',
   // photo gallery — frame with a sun over hills
   'images': '<rect x="18" y="24" width="64" height="52" rx="7"/><circle cx="37" cy="42" r="6"/><path d="M22 68 L42 48 L54 60 L64 50 L78 68"/>',
+  // pan/tilt laser — aim graticule with crosshair + a beam dot off-center
+  'washer': '<circle cx="50" cy="50" r="34"/><path d="M50 12 L50 24 M50 76 L50 88 M12 50 L24 50 M76 50 L88 50"/><circle cx="63" cy="37" r="4.5" fill="currentColor"/><path d="M63 20 L63 30 M63 44 L63 54 M46 37 L56 37 M70 37 L80 37"/>',
   // rune sigil in a diamond
   'sigil-engine': '<path d="M50 15 L75 50 L50 85 L25 50 Z"/><path d="M50 31 L50 69 M33 50 L67 50"/><circle cx="50" cy="50" r="7"/>'
 }

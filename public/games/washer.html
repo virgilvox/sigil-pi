@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>WASHER</title>
+<style>
+  :root{
+    --bg:#000;            /* off-circle: invisible against the round bezel */
+    --face:#0b0d11;       /* instrument face */
+    --face2:#12161c;      /* raised surface */
+    --rim:#1c222b;        /* ring / tick lines */
+    --rim2:#2a333f;
+    --ink:#c8d2dc;        /* primary text */
+    --dim:#5c6774;        /* micro labels */
+    --teal:#2dd4bf;       /* accent / active */
+    --tealdim:#12463f;
+    --glow:#74ffbe;       /* phosphor stroke, matches the charged glow paint */
+    --beam:#cbb8ff;       /* 405nm violet beam core */
+    --warn:#ff5d7a;       /* beam armed / caution */
+    --ok:#57e389;         /* connected */
+    --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular','Cascadia Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
+    font-family:var(--mono);color:var(--ink);
+    user-select:none;-webkit-user-select:none;touch-action:none;overscroll-behavior:none;}
+  body{display:grid;place-items:center;cursor:none;}
+
+  /* the round instrument. everything lives inside this circle. */
+  .dial{position:relative;width:100vmin;height:100vmin;border-radius:50%;overflow:hidden;
+    background:
+      radial-gradient(circle at 50% 42%, #14181f 0%, var(--face) 58%, #06070a 100%);
+    box-shadow:inset 0 0 6vmin rgba(0,0,0,.7);}
+
+  .grat{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .grat text{font-family:var(--mono);fill:var(--dim);}
+
+  /* two stacked canvases: persistent phosphor trail + live beam overlay */
+  .pad{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:70vmin;height:70vmin;border-radius:50%;}
+  #trail{z-index:1;}
+  #overlay{z-index:2;}
+
+  /* top status pill, sits in the gap band above the pad */
+  .status{position:absolute;top:5vmin;left:50%;transform:translateX(-50%);z-index:6;
+    display:flex;align-items:center;gap:1.8vmin;padding:1vmin 2.2vmin;
+    background:rgba(8,10,14,.72);border:1px solid var(--rim);border-radius:5vmin;
+    backdrop-filter:blur(2px);max-width:44vmin;}
+  .stat-dot{display:flex;align-items:center;gap:.7vmin;font-size:2vmin;letter-spacing:.1em;color:var(--dim);}
+  .stat-dot .led{width:1.3vmin;height:1.3vmin;border-radius:50%;background:#39424e;box-shadow:none;transition:.2s;}
+  .stat-dot.on .led{background:var(--ok);box-shadow:0 0 1.6vmin var(--ok);}
+  .stat-dot.arm.on .led{background:var(--warn);box-shadow:0 0 1.6vmin var(--warn);}
+  .mode-tag{font-size:2vmin;letter-spacing:.12em;color:var(--teal);}
+
+  /* bottom dock of round controls */
+  .dock{position:absolute;bottom:7vmin;left:50%;transform:translateX(-50%);z-index:6;
+    display:flex;gap:3vmin;align-items:center;}
+  .rbtn{width:11vmin;height:11vmin;border-radius:50%;border:1px solid var(--rim2);
+    background:linear-gradient(180deg,var(--face2),#0a0d11);color:var(--ink);
+    display:grid;place-items:center;cursor:none;position:relative;
+    box-shadow:0 .4vmin 0 #05070a, inset 0 0 0 0 transparent;transition:.12s;}
+  .rbtn:active{transform:translateY(.4vmin);box-shadow:0 0 0 #05070a;}
+  .rbtn svg{width:5vmin;height:5vmin;stroke:currentColor;fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;}
+  .rbtn.mini{width:10vmin;height:10vmin;}
+  .rbtn.mini svg{width:4.4vmin;height:4.4vmin;}
+  .rbtn.on{color:var(--teal);border-color:var(--teal);box-shadow:0 0 2.4vmin rgba(45,212,191,.35),0 .4vmin 0 #05070a;}
+  .rbtn.armed{color:var(--warn);border-color:var(--warn);box-shadow:0 0 2.8vmin rgba(255,93,122,.4),0 .4vmin 0 #05070a;}
+
+  /* center-mode positioning bar */
+  .cbar{position:absolute;bottom:8vmin;left:50%;transform:translateX(-50%);z-index:7;
+    display:none;gap:2vmin;align-items:center;padding:1.6vmin 2.4vmin;
+    background:rgba(8,10,14,.86);border:1px solid var(--rim2);border-radius:5vmin;max-width:64vmin;}
+  .cbar.show{display:flex;}
+  .chip{font-family:var(--mono);font-size:2.3vmin;letter-spacing:.08em;padding:1.5vmin 2vmin;
+    border-radius:3vmin;border:1px solid var(--rim2);background:#0a0d11;color:var(--ink);cursor:none;white-space:nowrap;}
+  .chip.on{color:var(--teal);border-color:var(--teal);}
+  .chip.go{color:#04110f;background:var(--glow);border-color:var(--glow);font-weight:600;}
+  .chip.warn{color:var(--warn);border-color:var(--warn);}
+
+  /* transport chooser + settings share the disc-overlay pattern so nothing clips the curve */
+  .disc{position:absolute;inset:0;z-index:20;border-radius:50%;display:none;
+    background:radial-gradient(circle at 50% 42%,#12161d,#06070a 78%);}
+  .disc.show{display:block;}
+  .sheet{width:60vmin;height:100%;margin:0 auto;overflow-y:auto;overflow-x:hidden;
+    padding:18vmin 0 20vmin;scrollbar-width:none;}
+  .sheet::-webkit-scrollbar{display:none;}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4vmin;}
+  .wm{font-size:3.6vmin;letter-spacing:.32em;color:var(--ink);}
+  .wm b{color:var(--teal);font-weight:400;}
+  .sub{font-size:2.1vmin;letter-spacing:.14em;color:var(--dim);margin-top:.4vmin;}
+
+  .chooser{display:flex;flex-direction:column;gap:3vmin;align-items:center;justify-content:center;
+    height:100%;padding:0 8vmin;}
+  .bigbtn{width:52vmin;padding:4vmin;border-radius:4vmin;border:1px solid var(--rim2);
+    background:linear-gradient(180deg,var(--face2),#080b0e);color:var(--ink);cursor:none;
+    display:flex;align-items:center;gap:3vmin;font-size:3vmin;letter-spacing:.14em;}
+  .bigbtn svg{width:6vmin;height:6vmin;stroke:var(--teal);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+  .bigbtn:active{transform:translateY(.4vmin);}
+
+  .row{margin-bottom:4.4vmin;}
+  .rl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1.4vmin;}
+  .rl .k{font-size:2.4vmin;letter-spacing:.14em;color:var(--dim);}
+  .rl .v{font-size:2.7vmin;color:var(--teal);}
+  input[type=range]{-webkit-appearance:none;width:100%;height:1vmin;border-radius:1vmin;
+    background:var(--rim);outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:5.2vmin;height:5.2vmin;
+    border-radius:50%;background:var(--teal);border:.5vmin solid #04110f;box-shadow:0 0 2vmin rgba(45,212,191,.4);}
+  .seg{display:flex;gap:1.6vmin;}
+  .seg button{flex:1;padding:2vmin;border-radius:2.4vmin;border:1px solid var(--rim2);
+    background:#0a0d11;color:var(--dim);font-family:var(--mono);font-size:2.4vmin;letter-spacing:.08em;cursor:none;}
+  .seg button.on{color:var(--teal);border-color:var(--teal);background:#0d1a19;}
+  .raw{display:flex;gap:1.6vmin;}
+  .raw input{flex:1;padding:2vmin 2.4vmin;border-radius:2.4vmin;border:1px solid var(--rim2);
+    background:#06080b;color:var(--ink);font-family:var(--mono);font-size:2.4vmin;outline:none;}
+  .raw button{padding:2vmin 3vmin;border-radius:2.4vmin;border:1px solid var(--teal);
+    background:#0d1a19;color:var(--teal);font-family:var(--mono);font-size:2.4vmin;letter-spacing:.1em;cursor:none;}
+  .mon{font-size:2.1vmin;line-height:1.7;color:var(--dim);white-space:pre-wrap;word-break:break-word;
+    background:#06080b;border:1px solid var(--rim);border-radius:2.4vmin;padding:2.4vmin;min-height:9vmin;max-height:22vmin;overflow-y:auto;}
+  .mon b{color:var(--glow);font-weight:400;}
+  .hint{font-size:2vmin;color:var(--dim);line-height:1.6;letter-spacing:.02em;}
+  .divider{height:1px;background:var(--rim);margin:5vmin 0;}
+</style>
+</head>
+<body>
+<div class="dial" id="dial">
+
+  <svg class="grat" id="grat" viewBox="0 0 100 100" aria-hidden="true"></svg>
+
+  <canvas id="trail" class="pad"></canvas>
+  <canvas id="overlay" class="pad"></canvas>
+
+  <div class="status">
+    <div class="stat-dot" id="sConn"><span class="led"></span><span>LINK</span></div>
+    <div class="stat-dot arm" id="sArm"><span class="led"></span><span>BEAM</span></div>
+    <div class="mode-tag" id="sMode">DRAW</div>
+  </div>
+
+  <div class="dock" id="dock">
+    <button class="rbtn" id="bConn" title="connect">
+      <svg viewBox="0 0 24 24"><path d="M9 7V4M15 7V4M8 7h8v4a4 4 0 0 1-8 0zM12 15v5"/></svg>
+    </button>
+    <button class="rbtn" id="bArm" title="arm beam">
+      <svg viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+    </button>
+    <button class="rbtn" id="bCenter" title="set center">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="rbtn" id="bSet" title="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+    </button>
+  </div>
+
+  <div class="cbar" id="cbar">
+    <button class="chip" id="cFine">FINE</button>
+    <button class="chip" id="cHome">HOME</button>
+    <button class="chip go" id="cLock">LOCK</button>
+    <button class="chip warn" id="cExit">EXIT</button>
+  </div>
+
+  <!-- transport chooser -->
+  <div class="disc" id="chooser">
+    <div class="chooser">
+      <div class="wm" style="letter-spacing:.3em">CONNECT <b>RIG</b></div>
+      <button class="bigbtn" id="pickSerial">
+        <svg viewBox="0 0 24 24"><path d="M9 7V4M15 7V4M8 7h8v4a4 4 0 0 1-8 0zM12 15v5"/></svg>
+        USB SERIAL
+      </button>
+      <button class="bigbtn" id="pickBle">
+        <svg viewBox="0 0 24 24"><path d="M8 7l8 5-4 3V4l4 3-8 5"/></svg>
+        BLUETOOTH
+      </button>
+      <button class="chip warn" id="pickCancel" style="margin-top:1vmin">CANCEL</button>
+    </div>
+  </div>
+
+  <!-- settings -->
+  <div class="disc" id="settings">
+    <div class="sheet">
+      <div class="head">
+        <div><div class="wm">WA<b>SHER</b></div><div class="sub">PAN / TILT LASER</div></div>
+        <button class="rbtn mini" id="setClose"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+
+      <div class="row">
+        <div class="rl"><span class="k">PAN SPAN</span><span class="v" id="vPan">30&deg;</span></div>
+        <input type="range" id="rPan" min="5" max="80" step="1" value="30">
+      </div>
+      <div class="row">
+        <div class="rl"><span class="k">TILT SPAN</span><span class="v" id="vTilt">30&deg;</span></div>
+        <input type="range" id="rTilt" min="5" max="80" step="1" value="30">
+      </div>
+
+      <div class="row">
+        <div class="rl"><span class="k">INVERT AXES</span><span class="v" id="vInv">NONE</span></div>
+        <div class="seg">
+          <button id="tInvP">FLIP PAN</button>
+          <button id="tInvT">FLIP TILT</button>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="rl"><span class="k">MIN PULSE</span><span class="v" id="vMin">500us</span></div>
+        <input type="range" id="rMin" min="500" max="1500" step="10" value="500">
+      </div>
+      <div class="row">
+        <div class="rl"><span class="k">MAX PULSE</span><span class="v" id="vMax">2500us</span></div>
+        <input type="range" id="rMax" min="1500" max="2500" step="10" value="2500">
+      </div>
+      <div class="hint">Pulse range maps servo travel to the aim field. The firmware clamps to 500-2500us, so stay inside that.</div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="rl"><span class="k">LASER POLARITY</span><span class="v" id="vPol">ACTIVE HIGH</span></div>
+        <div class="seg">
+          <button id="polHi" class="on">ACTIVE HIGH</button>
+          <button id="polLo">ACTIVE LOW</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="rl"><span class="k">DEAD-MAN</span><span class="v" id="vDm">1500ms</span></div>
+        <input type="range" id="rDm" min="0" max="5000" step="100" value="1500">
+      </div>
+      <div class="hint">Beam and motion cut if no command arrives within this window. 0 disables it. WASHER pings automatically while linked.</div>
+      <div class="row" style="margin-top:4vmin">
+        <div class="seg">
+          <button id="bAtt">ATTACH SERVOS</button>
+          <button id="bDet">DETACH SERVOS</button>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="rl"><span class="k">TRAIL PERSISTENCE</span><span class="v" id="vFade">MED</span></div>
+        <input type="range" id="rFade" min="0" max="100" step="1" value="55">
+      </div>
+      <div class="row">
+        <div class="seg">
+          <button id="bClear">CLEAR TRAIL</button>
+          <button id="bFull">FULLSCREEN</button>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="rl"><span class="k">RAW COMMAND</span></div>
+        <div class="raw">
+          <input id="rawIn" placeholder="M 1500 1500 1" spellcheck="false" autocomplete="off">
+          <button id="rawSend">SEND</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="rl"><span class="k">RIG STATUS</span></div>
+        <div class="mon" id="mon">not connected</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   WASHER  --  round touch face for the pan/tilt laser rig (PanTiltLaser.ino)
+   Wire protocol (USB serial 115200 / BLE Nordic UART), one line per command:
+     M <panUs> <tiltUs> <0|1>   aim both servos + gate the beam, atomic
+     ZERO <panUs> <tiltUs>      set the origin the rig returns to
+     CENTER                     move to that origin, beam off
+     ATT / DET                  attach / detach servos
+     DM <ms>  POL <0|1>  PING   dead-man, polarity, heartbeat
+     ?                          request a STAT line
+   ========================================================================== */
+
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // write  (browser -> board)
+const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // notify (board -> browser)
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+
+/* ---- config / live state ---- */
+const CFG = {
+  spanPan:30, spanTilt:30,
+  invPan:false, invTilt:false,
+  minUs:500, maxUs:2500,
+  homePan:90, homeTilt:90,   // servo degrees that the pad centre maps to
+  deadman:1500, activeHigh:true,
+  fade:55, fine:false
+};
+const S = { transport:null, connected:false, armed:false, center:false,
+            drawing:false, ptrId:null };
+let aim = { pan:90, tilt:90 };            // last commanded absolute degrees
+let want = null;                          // pending frame for the send pump
+
+const degToUs = d => Math.round(CFG.minUs + clamp(d,0,180)/180*(CFG.maxUs-CFG.minUs));
+const usToDeg = u => (clamp(u,CFG.minUs,CFG.maxUs)-CFG.minUs)/(CFG.maxUs-CFG.minUs)*180;
+
+/* ==========================================================================
+   TRANSPORT
+   ========================================================================== */
+const enc = new TextEncoder();
+let serPort=null, serReader=null, serWriter=null, serClosed=null;
+let bleDev=null, bleRx=null, bleTx=null, bleQ=Promise.resolve();
+let rxBuf='';
+
+async function connectSerial(){
+  if(!('serial' in navigator)){ log('serial unavailable, use Chromium','err'); return; }
+  try{
+    serPort = await navigator.serial.requestPort();
+    await serPort.open({ baudRate:115200 });
+    serWriter = serPort.writable.getWriter();
+    const dec = new TextDecoderStream();
+    serClosed = serPort.readable.pipeTo(dec.writable).catch(()=>{});
+    serReader = dec.readable.getReader();
+    readLoop();
+    onLink('serial');
+  }catch(e){ log('serial: '+e.message,'err'); }
+}
+async function connectBle(){
+  if(!('bluetooth' in navigator)){ log('bluetooth unavailable, use Chromium','err'); return; }
+  try{
+    bleDev = await navigator.bluetooth.requestDevice({ filters:[{services:[NUS]}], optionalServices:[NUS] });
+    bleDev.addEventListener('gattserverdisconnected', ()=>teardown('link dropped'));
+    const srv = await (await bleDev.gatt.connect()).getPrimaryService(NUS);
+    bleRx = await srv.getCharacteristic(NUS_RX);
+    bleTx = await srv.getCharacteristic(NUS_TX);
+    await bleTx.startNotifications();
+    bleTx.addEventListener('characteristicvaluechanged', e=>{
+      rxBuf += new TextDecoder().decode(e.target.value); drainLines();
+    });
+    onLink('ble');
+  }catch(e){ log('bluetooth: '+e.message,'err'); }
+}
+async function readLoop(){
+  try{
+    while(true){
+      const {value,done} = await serReader.read();
+      if(done) break;
+      rxBuf += value; drainLines();
+    }
+  }catch(e){ /* closed */ }
+}
+function drainLines(){
+  let i;
+  while((i=rxBuf.indexOf('\n'))>=0){
+    const line = rxBuf.slice(0,i).replace(/\r$/,'').trim();
+    rxBuf = rxBuf.slice(i+1);
+    if(line) onLine(line);
+  }
+}
+function onLine(line){
+  if(line.startsWith('STAT')) parseStat(line);
+  log(line);
+}
+function txSend(str){
+  if(!S.connected) return;
+  if(S.transport==='serial' && serWriter){ serWriter.write(enc.encode(str+'\n')).catch(()=>{}); return; }
+  if(S.transport==='ble' && bleRx){
+    const data = enc.encode(str+'\n');
+    bleQ = bleQ.then(async()=>{
+      for(let o=0;o<data.length;o+=20){
+        const chunk = data.slice(o,o+20);
+        try{ await bleRx.writeValueWithoutResponse(chunk); }
+        catch(e){ try{ await bleRx.writeValue(chunk); }catch(_){} }
+      }
+    }).catch(()=>{});
+  }
+}
+function onLink(kind){
+  S.transport=kind; S.connected=true; want=null;
+  $('sConn').classList.add('on'); $('bConn').classList.add('on');
+  chooser.classList.remove('show');
+  txSend('DM '+CFG.deadman);
+  txSend('POL '+(CFG.activeHigh?1:0));
+  txSend('?');                       // pull STAT to sync origin + pulse range
+  startDeadman();
+  log('linked over '+(kind==='serial'?'USB serial':'bluetooth'),'ok');
+}
+async function teardown(reason){
+  stopDeadman();
+  S.connected=false; S.transport=null;
+  $('sConn').classList.remove('on'); $('bConn').classList.remove('on');
+  try{ if(serReader){ await serReader.cancel(); serReader=null; } }catch(e){}
+  try{ if(serWriter){ serWriter.releaseLock(); serWriter=null; } }catch(e){}
+  try{ if(serClosed){ await serClosed; serClosed=null; } }catch(e){}
+  try{ if(serPort){ await serPort.close(); serPort=null; } }catch(e){}
+  try{ if(bleDev && bleDev.gatt.connected) bleDev.gatt.disconnect(); }catch(e){}
+  bleDev=bleRx=bleTx=null; rxBuf='';
+  if(reason) log(reason,'err');
+}
+function parseStat(line){
+  const o={};
+  line.slice(4).trim().split(/\s+/).forEach(t=>{ const [k,v]=t.split('='); if(k) o[k]=v; });
+  if(o.min && o.max){ CFG.minUs=+o.min; CFG.maxUs=+o.max; syncPulseUI(); }
+  if(o.hp && o.ht){ CFG.homePan=usToDeg(+o.hp); CFG.homeTilt=usToDeg(+o.ht); aim.pan=CFG.homePan; aim.tilt=CFG.homeTilt; }
+  if(o.att!==undefined){ /* servos state, informational */ }
+  monStat(o);
+}
+
+/* dead-man heartbeat: keep the rig alive while linked */
+let dmTimer=null;
+function startDeadman(){ stopDeadman(); if(CFG.deadman>0) dmTimer=setInterval(()=>txSend('PING'), Math.max(300, CFG.deadman*0.5)); }
+function stopDeadman(){ if(dmTimer){ clearInterval(dmTimer); dmTimer=null; } }
+
+/* ==========================================================================
+   AIM  --  pad touch to servo degrees, streamed at ~30Hz, beam edges flush now
+   ========================================================================== */
+function aimFromPad(nx,ny){
+  const sp = (CFG.invPan?-1:1)  * nx * CFG.spanPan;
+  const st = (CFG.invTilt?-1:1) * (-ny) * CFG.spanTilt;  // up on the pad raises tilt
+  aim.pan  = clamp(CFG.homePan  + sp, 0, 180);
+  aim.tilt = clamp(CFG.homeTilt + st, 0, 180);
+}
+function queueBeam(on, flush){
+  const p=degToUs(aim.pan), t=degToUs(aim.tilt);
+  want = { p, t, l:on?1:0, flush:!!flush };
+}
+function pump(){
+  requestAnimationFrame(pump);
+  renderFrame();
+  if(!want || !S.connected) return;
+  const now=performance.now();
+  const str='M '+want.p+' '+want.t+' '+want.l;
+  if(want.flush || (now-pump.last>=30 && str!==pump.prev)){
+    pump.last=now; pump.prev=str; want.flush=false;
+    txSend(str);
+  }
+}
+pump.last=0; pump.prev='';
+
+/* ==========================================================================
+   CANVAS  --  phosphor trail + live beam overlay
+   ========================================================================== */
+const trail=$('trail'), overlay=$('overlay');
+const tctx=trail.getContext('2d'), octx=overlay.getContext('2d');
+let CW=0, CH=0, DPR=1, lastPt=null;
+
+function sizeCanvas(){
+  DPR = Math.min(window.devicePixelRatio||1, 2.5);
+  const s = trail.clientWidth;                 // CSS px, square
+  CW=s; CH=s;
+  [trail,overlay].forEach(c=>{ c.width=Math.round(s*DPR); c.height=Math.round(s*DPR); });
+  tctx.setTransform(DPR,0,0,DPR,0,0);
+  octx.setTransform(DPR,0,0,DPR,0,0);
+}
+function padPx(nx,ny){ return [ (nx*0.5+0.5)*CW, (ny*0.5+0.5)*CH ]; }
+
+function strokeTo(nx,ny){
+  const [x,y]=padPx(nx,ny);
+  if(lastPt){
+    tctx.globalCompositeOperation='lighter';
+    tctx.strokeStyle='rgba(116,255,190,0.85)';
+    tctx.lineWidth=Math.max(2, CW*0.008);
+    tctx.lineCap='round';
+    tctx.shadowColor='#74ffbe'; tctx.shadowBlur=CW*0.02;
+    tctx.beginPath(); tctx.moveTo(lastPt[0],lastPt[1]); tctx.lineTo(x,y); tctx.stroke();
+    tctx.shadowBlur=0; tctx.globalCompositeOperation='source-over';
+  }
+  lastPt=[x,y];
+}
+function fadeStep(){
+  // higher persistence = slower erase. maps 0..100 -> alpha erase per frame.
+  const a = 0.14 * (1 - CFG.fade/100) + 0.006;
+  tctx.globalCompositeOperation='destination-out';
+  tctx.fillStyle='rgba(0,0,0,'+a.toFixed(4)+')';
+  tctx.fillRect(0,0,CW,CH);
+  tctx.globalCompositeOperation='source-over';
+}
+function renderFrame(){
+  fadeStep();
+  // live beam dot at the current aim, drawn from home-relative offset
+  const nx = clamp((aim.pan  - CFG.homePan )/CFG.spanPan  * (CFG.invPan?-1:1), -1, 1);
+  const ny = clamp(-(aim.tilt - CFG.homeTilt)/CFG.spanTilt * (CFG.invTilt?-1:1), -1, 1);
+  const [x,y]=padPx(nx,ny);
+  octx.clearRect(0,0,CW,CH);
+  const beamOn = (S.drawing && (S.armed||S.center));
+  // outer glow
+  octx.beginPath(); octx.arc(x,y, CW*(beamOn?0.03:0.018), 0, 7);
+  octx.fillStyle = beamOn ? 'rgba(116,255,190,0.18)' : 'rgba(90,103,116,0.12)';
+  octx.fill();
+  // core
+  octx.beginPath(); octx.arc(x,y, CW*(beamOn?0.011:0.007), 0, 7);
+  octx.fillStyle = beamOn ? '#eae2ff' : '#7d8894';
+  octx.shadowColor = beamOn ? '#cbb8ff' : 'transparent';
+  octx.shadowBlur = beamOn ? CW*0.03 : 0;
+  octx.fill(); octx.shadowBlur=0;
+  // crosshair while centering
+  if(S.center){
+    octx.strokeStyle='rgba(45,212,191,0.55)'; octx.lineWidth=Math.max(1,CW*0.003);
+    octx.beginPath();
+    octx.moveTo(x-CW*0.05,y); octx.lineTo(x+CW*0.05,y);
+    octx.moveTo(x,y-CW*0.05); octx.lineTo(x,y+CW*0.05);
+    octx.stroke();
+  }
+}
+
+/* ==========================================================================
+   POINTER  --  the pad is the aim field
+   ========================================================================== */
+function padCoords(e){
+  const r=overlay.getBoundingClientRect();
+  let dx=(e.clientX-(r.left+r.width/2))/(r.width/2);
+  let dy=(e.clientY-(r.top +r.height/2))/(r.height/2);
+  const m=Math.hypot(dx,dy); if(m>1){ dx/=m; dy/=m; }
+  if(CFG.fine){ dx*=0.25; dy*=0.25; }
+  return [dx,dy];
+}
+overlay.addEventListener('pointerdown', e=>{
+  if(S.ptrId!==null) return;
+  S.ptrId=e.pointerId; overlay.setPointerCapture(e.pointerId);
+  S.drawing=true; lastPt=null;
+  const [nx,ny]=padCoords(e); aimFromPad(nx,ny);
+  const fire = S.armed||S.center;
+  queueBeam(fire, true);
+  if(fire && S.armed && !S.center) strokeTo(nx,ny);   // begin a stroke only in draw mode
+});
+overlay.addEventListener('pointermove', e=>{
+  if(e.pointerId!==S.ptrId) return;
+  const [nx,ny]=padCoords(e); aimFromPad(nx,ny);
+  const fire = S.armed||S.center;
+  queueBeam(fire, false);
+  if(fire && S.armed && !S.center) strokeTo(nx,ny);
+});
+function endPtr(e){
+  if(e.pointerId!==S.ptrId) return;
+  S.ptrId=null; S.drawing=false; lastPt=null;
+  queueBeam(false, true);           // beam off immediately on release
+}
+overlay.addEventListener('pointerup', endPtr);
+overlay.addEventListener('pointercancel', endPtr);
+overlay.addEventListener('lostpointercapture', endPtr);
+
+/* ==========================================================================
+   UI WIRING
+   ========================================================================== */
+const chooser=$('chooser'), settings=$('settings'), cbar=$('cbar');
+
+$('bConn').onclick = ()=>{
+  if(S.connected){ txSend('M '+degToUs(aim.pan)+' '+degToUs(aim.tilt)+' 0'); teardown('disconnected'); }
+  else chooser.classList.add('show');
+};
+$('pickSerial').onclick=()=>connectSerial();
+$('pickBle').onclick=()=>connectBle();
+$('pickCancel').onclick=()=>chooser.classList.remove('show');
+
+$('bArm').onclick = ()=>{
+  S.armed=!S.armed;
+  $('bArm').classList.toggle('armed',S.armed);
+  $('sArm').classList.toggle('on',S.armed);
+  if(!S.armed) queueBeam(false,true);
+};
+
+$('bCenter').onclick = ()=>enterCenter();
+$('cExit').onclick   = ()=>exitCenter(false);
+$('cLock').onclick   = ()=>exitCenter(true);
+$('cHome').onclick   = ()=>{ txSend('CENTER'); aim.pan=CFG.homePan; aim.tilt=CFG.homeTilt; };
+$('cFine').onclick   = ()=>{ CFG.fine=!CFG.fine; $('cFine').classList.toggle('on',CFG.fine); };
+
+function enterCenter(){
+  S.center=true; $('sMode').textContent='CENTER';
+  $('bCenter').classList.add('on'); dock.style.display='none'; cbar.classList.add('show');
+}
+function exitCenter(lock){
+  if(lock){
+    const p=degToUs(aim.pan), t=degToUs(aim.tilt);
+    txSend('ZERO '+p+' '+t);
+    CFG.homePan=aim.pan; CFG.homeTilt=aim.tilt;   // pad recenters on the new origin
+    log('origin set: pan '+p+'us tilt '+t+'us','ok');
+  }
+  queueBeam(false,true);
+  S.center=false; $('sMode').textContent='DRAW';
+  $('bCenter').classList.remove('on'); dock.style.display='flex'; cbar.classList.remove('show');
+  CFG.fine=false; $('cFine').classList.remove('on');
+}
+
+$('bSet').onclick=()=>settings.classList.add('show');
+$('setClose').onclick=()=>settings.classList.remove('show');
+
+/* sliders + toggles */
+function fadeLabel(v){ return v<25?'SHORT':v<55?'MED':v<80?'LONG':'HOLD'; }
+$('rPan').oninput=e=>{ CFG.spanPan=+e.target.value; $('vPan').innerHTML=CFG.spanPan+'&deg;'; };
+$('rTilt').oninput=e=>{ CFG.spanTilt=+e.target.value; $('vTilt').innerHTML=CFG.spanTilt+'&deg;'; drawGrat(); };
+$('rMin').oninput=e=>{ CFG.minUs=Math.min(+e.target.value,CFG.maxUs-100); $('vMin').textContent=CFG.minUs+'us'; };
+$('rMax').oninput=e=>{ CFG.maxUs=Math.max(+e.target.value,CFG.minUs+100); $('vMax').textContent=CFG.maxUs+'us'; };
+$('rDm').oninput=e=>{ CFG.deadman=+e.target.value; $('vDm').textContent=CFG.deadman?CFG.deadman+'ms':'OFF'; };
+$('rDm').onchange=e=>{ txSend('DM '+CFG.deadman); startDeadman(); };
+$('rFade').oninput=e=>{ CFG.fade=+e.target.value; $('vFade').textContent=fadeLabel(CFG.fade); };
+
+$('tInvP').onclick=()=>{ CFG.invPan=!CFG.invPan; $('tInvP').classList.toggle('on',CFG.invPan); invLabel(); drawGrat(); };
+$('tInvT').onclick=()=>{ CFG.invTilt=!CFG.invTilt; $('tInvT').classList.toggle('on',CFG.invTilt); invLabel(); drawGrat(); };
+function invLabel(){ const a=[]; if(CFG.invPan)a.push('PAN'); if(CFG.invTilt)a.push('TILT'); $('vInv').textContent=a.length?a.join('+'):'NONE'; }
+
+$('polHi').onclick=()=>setPol(true);
+$('polLo').onclick=()=>setPol(false);
+function setPol(hi){ CFG.activeHigh=hi; $('polHi').classList.toggle('on',hi); $('polLo').classList.toggle('on',!hi);
+  $('vPol').textContent=hi?'ACTIVE HIGH':'ACTIVE LOW'; txSend('POL '+(hi?1:0)); }
+
+$('bAtt').onclick=()=>txSend('ATT');
+$('bDet').onclick=()=>txSend('DET');
+$('bClear').onclick=()=>tctx.clearRect(0,0,CW,CH);
+$('bFull').onclick=()=>{ const el=document.documentElement; (document.fullscreenElement?document.exitFullscreen():el.requestFullscreen&&el.requestFullscreen()); };
+
+$('rawSend').onclick=sendRaw;
+$('rawIn').addEventListener('keydown',e=>{ if(e.key==='Enter') sendRaw(); });
+function sendRaw(){ const v=$('rawIn').value.trim(); if(!v) return; txSend(v); log('> '+v); $('rawIn').value=''; }
+
+function syncPulseUI(){
+  $('rMin').value=CFG.minUs; $('vMin').textContent=CFG.minUs+'us';
+  $('rMax').value=CFG.maxUs; $('vMax').textContent=CFG.maxUs+'us';
+}
+
+/* console readout */
+const mon=$('mon'); let monLines=[];
+function log(t,cls){ monLines.push((cls==='err'?'! ':cls==='ok'?'+ ':'  ')+t); if(monLines.length>60)monLines.shift();
+  mon.textContent=monLines.slice(-14).join('\n'); mon.scrollTop=mon.scrollHeight; }
+function monStat(o){ /* keep the latest STAT visible at a glance */
+  log('STAT pan='+o.pan+' tilt='+o.tilt+' beam='+o.laser+' home='+o.hp+'/'+o.ht+' pol='+o.pol+' att='+o.att); }
+
+/* ==========================================================================
+   GRATICULE  --  the ring is the aim field, ticked and labelled in degrees
+   ========================================================================== */
+function drawGrat(){
+  const C=50, R=49, PAD=35;
+  let s='';
+  s+='<circle cx="50" cy="50" r="'+R+'" fill="none" stroke="var(--rim)" stroke-width="0.5"/>';
+  s+='<circle cx="50" cy="50" r="'+PAD+'" fill="none" stroke="var(--rim)" stroke-width="0.4"/>';
+  s+='<circle cx="50" cy="50" r="'+(PAD*0.5)+'" fill="none" stroke="var(--rim)" stroke-width="0.25" stroke-dasharray="0.6 1.4"/>';
+  for(let a=0;a<360;a+=15){
+    const rad=a*Math.PI/180, card=(a%90===0);
+    const r0=PAD, r1=PAD+(card?3.6:2);
+    const x0=C+r0*Math.sin(rad), y0=C-r0*Math.cos(rad);
+    const x1=C+r1*Math.sin(rad), y1=C-r1*Math.cos(rad);
+    s+='<line x1="'+x0.toFixed(2)+'" y1="'+y0.toFixed(2)+'" x2="'+x1.toFixed(2)+'" y2="'+y1.toFixed(2)+'" stroke="'+(card?'var(--rim2)':'var(--rim)')+'" stroke-width="'+(card?0.6:0.35)+'"/>';
+  }
+  // centre crosshair marks the locked origin
+  s+='<line x1="47" y1="50" x2="53" y2="50" stroke="var(--tealdim)" stroke-width="0.4"/>';
+  s+='<line x1="50" y1="47" x2="50" y2="53" stroke="var(--tealdim)" stroke-width="0.4"/>';
+  // axis labels carry the configured field of view
+  const tp=CFG.spanTilt, pp=CFG.spanPan;
+  s+='<text x="50" y="8.6" text-anchor="middle" font-size="2" letter-spacing="0.3">TILT +'+tp+'</text>';
+  s+='<text x="50" y="93.6" text-anchor="middle" font-size="2" letter-spacing="0.3">TILT -'+tp+'</text>';
+  s+='<text x="7" y="50.7" text-anchor="middle" font-size="2" letter-spacing="0.3" transform="rotate(-90 7 50)">PAN -'+pp+'</text>';
+  s+='<text x="93" y="50.7" text-anchor="middle" font-size="2" letter-spacing="0.3" transform="rotate(90 93 50)">PAN +'+pp+'</text>';
+  $('grat').innerHTML=s;
+}
+
+/* ==========================================================================
+   SAFETY + INIT
+   ========================================================================== */
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ S.drawing=false; S.ptrId=null; queueBeam(false,true); } });
+window.addEventListener('blur', ()=>{ if(S.drawing){ S.drawing=false; S.ptrId=null; queueBeam(false,true); } });
+window.addEventListener('beforeunload', ()=>{ try{ txSend('M '+degToUs(aim.pan)+' '+degToUs(aim.tilt)+' 0'); }catch(e){} });
+document.addEventListener('contextmenu', e=>e.preventDefault());
+window.addEventListener('resize', sizeCanvas);
+
+function init(){
+  sizeCanvas(); drawGrat(); setPol(true); invLabel();
+  $('vFade').textContent=fadeLabel(CFG.fade);
+  requestAnimationFrame(pump);
+  log('WASHER ready. tap LINK to connect the rig.');
+}
+init();
+</script>
+</body>
+</html>

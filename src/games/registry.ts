@@ -152,6 +152,17 @@ export const BAKED_GAMES: BakedGame[] = [
     component: () => import('@/components/grommet/GrommetGame.vue')
   },
   {
+    id: 'washer',
+    name: 'WASHER',
+    route: '/washer',
+    color: '#2dd4bf',
+    description: 'PAN/TILT LASER',
+    source: 'baked',
+    order: 88,
+    icon: 'washer',
+    component: () => import('@/components/washer/WasherGame.vue')
+  },
+  {
     id: 'videos',
     name: 'VIDEOS',
     route: '/videos',
