@@ -25,15 +25,23 @@ const showTune = ref(false)
 const TRACK_COLOR: Record<string, string> = {
   bass: '#ff6b5c', keys: '#ffb347', pad: '#b47cff', chime: '#3ad6e6', kit: '#ff5ca8', texture: '#5fe08a'
 }
+const MOOD_COLOR: Record<string, string> = {
+  EMBER: '#ff6b5c', DRAW: '#4cc7c0', TEMPER: '#ffb347', BILLOW: '#5fe08a', QUENCH: '#b47cff', STRIKE: '#ff5ca8'
+}
 const RING_R = [272, 242, 212, 182, 152, 122]
 const BAND = 24, HUB_R = 92
 
 const rings = computed(() => store.piece.tracks.map((t, i) => ({ track: t, r: RING_R[i] ?? 120 })))
 const selTrack = computed(() => store.selectedTrack ? store.trackById(store.selectedTrack) : null)
-const moodColor = computed(() => TRACK_COLOR[store.piece.tracks[0]?.id] ?? '#b47cff')
+const moodColor = computed(() => MOOD_COLOR[store.piece.mood] ?? '#b47cff')
 
+let alive = true
 async function start(): Promise<void> {
-  try { await store.boot(); started.value = true } catch (e) { console.error('[composer] boot failed', e) }
+  try {
+    await store.boot()
+    if (!alive) { store.dispose(); return }
+    started.value = true
+  } catch (e) { console.error('[composer] boot failed', e) }
 }
 
 function toLocal(e: PointerEvent): { x: number; y: number } {
@@ -121,6 +129,7 @@ watch(started, async (on) => {
   raf = requestAnimationFrame(draw)
 })
 onUnmounted(() => {
+  alive = false
   cancelAnimationFrame(raf)
   store.dispose()
   globalStore.setCurrentGame(null)
@@ -168,7 +177,8 @@ function cycleMood(dir: number): void {
 
             <div v-if="selTrack.kind !== 'kit'" class="engines">
               <button v-for="[id, label] in store.engineOptions" :key="id" class="ech"
-                :class="{ on: id === selTrack.engine }" :style="{ '--e': engineColor(store.usableEngine(id)) }"
+                :class="{ on: id === selTrack.engine }" :disabled="id === selTrack.engine"
+                :style="{ '--e': engineColor(store.usableEngine(id)) }"
                 @click="store.setTrackEngine(selTrack.id, id)">{{ label }}</button>
             </div>
             <div v-else class="kitnote">KICK · SNARE · HAT</div>
@@ -212,7 +222,7 @@ function cycleMood(dir: number): void {
               <button @click="store.setSwing(store.swing - 0.04)">−</button><b>{{ Math.round(store.swing * 100) }}%</b><button @click="store.setSwing(store.swing + 0.04)">+</button>
             </div>
             <div class="row"><span>COMP</span>
-              <button class="comp" :class="{ on: store.piece.fx.comp }" @click="store.piece.fx.comp = !store.piece.fx.comp">{{ store.piece.fx.comp ? 'ON' : 'OFF' }}</button>
+              <button class="comp" :class="{ on: store.piece.fx.comp }" @click="store.toggleComp()">{{ store.piece.fx.comp ? 'ON' : 'OFF' }}</button>
             </div>
             <button class="close-wide" @click="showTune = false">CLOSE</button>
           </div>

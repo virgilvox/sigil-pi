@@ -355,7 +355,10 @@ export class Composer {
         ['limiter', { ceiling: -0.5 }])
     } else this.b.masterFx(['limiter', { ceiling: -0.5 }])
   }
-  resetPosition(): void { this.lastEvoBar = 0; this.prevVoicing = []; this.drawQueue.length = 0 }
+  // Restart the piece cleanly from its seed on a stop→play (rebuild the base
+  // score — evoCount, lane matrices/state, progression — not just the phrase
+  // bookkeeping, so replays start from the composed beginning).
+  resetPosition(): void { this.buildScore(); this.drawQueue.length = 0 }
 
   dispose(): void {
     if (this.disposed) return

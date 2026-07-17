@@ -25,6 +25,7 @@ const SCALE_NAMES = ['minor', 'dorian', 'lydian', 'mixolydian', 'phrygian', 'maj
 export const useComposerStore = defineStore('composer', () => {
   const engine = useBellows({ seed: 'composer', bpm: 90 })
   let composer: Composer | null = null
+  let disposed = false
 
   const seed = ref(freshSeed())
   const piece = reactive<PieceState>({
@@ -42,7 +43,7 @@ export const useComposerStore = defineStore('composer', () => {
   const ready = engine.ready
   const playing = engine.playing
   const bpm = engine.bpm
-  const swing = ref(0.08)
+  const swing = ref(seeded.swing / 100)
   const selectedTrack = ref<string | null>(null)
   const readout = reactive({ bar: 0, chord: '—', phrase: 'A', step: 0 })
 
@@ -58,9 +59,13 @@ export const useComposerStore = defineStore('composer', () => {
   async function boot(): Promise<void> {
     if (engine.bellows()) return
     if (booting) return booting
+    disposed = false
     booting = (async () => {
       engine.configure(b => b.masterGain(0.9))
       await engine.boot()
+      // If the component unmounted mid-boot, tear the freshly-booted engine back
+      // down instead of building an orphaned Composer (whose 16n clock sub leaks).
+      if (disposed) { engine.teardown(); return }
       engine.setBpm(MOODS[piece.mood]?.bpm ?? 90)
       engine.setSwing(swing.value)
       buildComposer()
@@ -89,6 +94,7 @@ export const useComposerStore = defineStore('composer', () => {
     composer?.reseed(seed.value)
   }
   function toggleEvolve(): void { piece.evolve = !piece.evolve }
+  function toggleComp(): void { piece.fx.comp = !piece.fx.comp; composer?.applyMasterFx() }
 
   function setMood(mood: string): void {
     if (!MOODS[mood]) return
@@ -128,7 +134,7 @@ export const useComposerStore = defineStore('composer', () => {
     const tr = trackById(id); if (tr) tr.mute = !tr.mute
   }
   function setTrackEngine(id: string, engineId: string): void {
-    const tr = trackById(id); if (!tr || tr.kind === 'kit') return
+    const tr = trackById(id); if (!tr || tr.kind === 'kit' || tr.engine === engineId) return
     tr.engine = engineId
     tr.macros = macrosFor(engineId)
     composer?.swapEngine(tr)
@@ -181,6 +187,7 @@ export const useComposerStore = defineStore('composer', () => {
   function currentStep(): number { return playing.value ? readout.step : -1 }
 
   function dispose(): void {
+    disposed = true
     composer?.dispose(); composer = null
     engine.teardown()
     readout.step = 0
@@ -192,7 +199,7 @@ export const useComposerStore = defineStore('composer', () => {
     rootName, moods, scaleNames, engineOptions, usableEngine, pitchClassName,
     // lifecycle / transport
     boot, dispose, togglePlay, panic, setBpm, setSwing,
-    compose, toggleEvolve, setMood, setRoot, shiftRoot, setScaleName,
+    compose, toggleEvolve, toggleComp, setMood, setRoot, shiftRoot, setScaleName,
     // tracks
     trackById, selectTrack, toggleMute, setTrackEngine, setTrackLevel, setTrackSend,
     setTrackMacro, shiftOct, setPulses, setRot, setDensity,
