@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { usePrizeWheelStore } from '@/stores/prize-wheel'
+import { useSFX } from '@/composables/useSFX'
 import CircularViewport from '@/components/core/CircularViewport.vue'
 
 const store = usePrizeWheelStore()
+const sfx = useSFX()
 const wheelRef = ref<HTMLDivElement | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
 
 let animationId: number | null = null
+// Track the segment under the pointer so we can tick on each crossing; the tick
+// rate follows the wheel's speed (fast → rapid clicks, sparse as it settles).
+let lastSeg = -1
+
+// Win jingle — fires once when the spin settles on a prize.
+watch(() => store.winner, (v) => { if (v) sfx.play('victory') })
 
 // Generate SVG segments
 const segments = computed(() => {
@@ -100,6 +108,16 @@ function handleHubClick(e: Event): void {
 
 function gameLoop(): void {
   store.update()
+  // Tick when the pointer crosses into a new segment (same math as the store's
+  // winner calc). Only while spinning, so idle/drag-scrub doesn't chatter.
+  if (store.state === 'spinning') {
+    const norm = ((store.currentRotation % 360) + 360) % 360
+    const pointerAngle = (360 - norm + 270) % 360
+    const seg = Math.floor(pointerAngle / store.segmentAngle) % store.prizes.length
+    if (seg !== lastSeg) { lastSeg = seg; sfx.play('click') }
+  } else {
+    lastSeg = -1
+  }
   animationId = requestAnimationFrame(gameLoop)
 }
 

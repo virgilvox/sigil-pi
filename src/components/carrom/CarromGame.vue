@@ -184,17 +184,18 @@ function handleGameInput(pos: { x: number; y: number }, isStart: boolean): void 
   }
   if (store.phase === 2) return
 
-  const zone = store.ZONES[store.currentPlayer]
+  const z = store.strikerZone
+  const zone = store.ZONES[z]
   let sliderHit = false
 
   if (zone.horizontal) {
-    const sliderY = zone.y + (store.currentPlayer === 0 ? 45 + 18 : -53 + 18)
+    const sliderY = zone.y + (z === 0 ? 45 + 18 : -53 + 18)
     if (Math.abs(pos.y - sliderY) < 30 && pos.x >= store.CX - 130 && pos.x <= store.CX + 130) {
       sliderHit = true
       store.sliderPos = Math.max(0, Math.min(1, (pos.x - (store.CX - 110)) / 220))
     }
   } else {
-    const sliderX = zone.x + (store.currentPlayer === 1 ? 45 : -53)
+    const sliderX = zone.x + (z === 1 ? 45 : -53)
     if (Math.abs(pos.x - sliderX) < 30 && pos.y >= store.CY - 130 && pos.y <= store.CY + 130) {
       sliderHit = true
       store.sliderPos = Math.max(0, Math.min(1, (pos.y - (store.CY - 110)) / 220))

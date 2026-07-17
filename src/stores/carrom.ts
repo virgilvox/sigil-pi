@@ -36,11 +36,14 @@ const W = 720
 const H = 720
 const CX = 360
 const CY = 360
-const BOARD_R = 290
-const WALL_INNER = 290
-const POCKET_R = 24
-const PIECE_R = 14
-const STRIKER_R = 18
+// Board fills the round viewport: the playing surface / physics wall push out to
+// ~322 (of the ~360 inscribed circle), pockets sit at the diagonal corners
+// against the wall, and the striker baselines move out to each player's edge.
+const BOARD_R = 322
+const WALL_INNER = 322
+const POCKET_R = 26
+const PIECE_R = 15
+const STRIKER_R = 20
 const PI2 = Math.PI * 2
 const FRICTION = 0.988
 const WALL_FRICTION = 0.78
@@ -51,19 +54,23 @@ const SUBSTEPS = 4
 const DT = 1 / SUBSTEPS
 const ZONE_WIDTH = 200
 
+// Corner pockets, out at the diagonal wall (center distance ≈ 300).
 const POCKETS = [
-  { x: CX - 182, y: CY - 182 },
-  { x: CX + 182, y: CY - 182 },
-  { x: CX - 182, y: CY + 182 },
-  { x: CX + 182, y: CY + 182 }
+  { x: CX - 212, y: CY - 212 },
+  { x: CX + 212, y: CY - 212 },
+  { x: CX - 212, y: CY + 212 },
+  { x: CX + 212, y: CY + 212 }
 ]
 const POCKET_R_SQ = (POCKET_R + 4) * (POCKET_R + 4)
 
+// Striker baselines: one per edge (0=bottom, 1=right, 2=top, 3=left), out near
+// the wall. Players are mapped to zones so 2-player sit ACROSS (0 & 2).
+const ZONE_DIST = 210
 const ZONES = [
-  { x: CX, y: CY + 150, horizontal: true },
-  { x: CX + 150, y: CY, horizontal: false },
-  { x: CX, y: CY - 150, horizontal: true },
-  { x: CX - 150, y: CY, horizontal: false }
+  { x: CX, y: CY + ZONE_DIST, horizontal: true },
+  { x: CX + ZONE_DIST, y: CY, horizontal: false },
+  { x: CX, y: CY - ZONE_DIST, horizontal: true },
+  { x: CX - ZONE_DIST, y: CY, horizontal: false }
 ]
 
 const RULE_OPTIONS = {
@@ -323,6 +330,13 @@ export const useCarromStore = defineStore('carrom', () => {
   })
   const ruleKeys = computed(() => Object.keys(RULE_LABELS) as (keyof typeof RULE_LABELS)[])
 
+  // Player → edge/zone. 4-player uses all four edges (0..3); 2-player uses only
+  // BOTTOM (0) and TOP (2) so the two players face each other ACROSS the board.
+  function playerZone(p: number): number {
+    return is4Player.value ? p : (p === 0 ? 0 : 2)
+  }
+  const strikerZone = computed(() => playerZone(currentPlayer.value))
+
   // Actions
   function getPlayerTeam(p: number): number {
     return is4Player.value ? teamAssign.value[p] : p
@@ -333,7 +347,7 @@ export const useCarromStore = defineStore('carrom', () => {
   }
 
   function getStrikerPosition(): { x: number; y: number } {
-    const zone = ZONES[currentPlayer.value]
+    const zone = ZONES[strikerZone.value]
     if (zone.horizontal) {
       return { x: CX - ZONE_WIDTH / 2 + sliderPos.value * ZONE_WIDTH, y: zone.y }
     }
@@ -342,7 +356,7 @@ export const useCarromStore = defineStore('carrom', () => {
 
   function getShootDirection(): { x: number; y: number } {
     const dirs = [{ x: 0, y: -1 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }]
-    return dirs[currentPlayer.value]
+    return dirs[strikerZone.value]
   }
 
   function resetStriker(): void {
@@ -389,8 +403,8 @@ export const useCarromStore = defineStore('carrom', () => {
     for (let i = 0; i < 6; i++) {
       const a = i * Math.PI / 3 + Math.PI / 6
       pieces.value.push({
-        x: CX + Math.cos(a) * 26,
-        y: CY + Math.sin(a) * 26,
+        x: CX + Math.cos(a) * 32,
+        y: CY + Math.sin(a) * 32,
         vx: 0,
         vy: 0,
         type: i % 2 === 0 ? 1 : 2,
@@ -402,8 +416,8 @@ export const useCarromStore = defineStore('carrom', () => {
     for (let i = 0; i < 12; i++) {
       const a = i * Math.PI / 6
       pieces.value.push({
-        x: CX + Math.cos(a) * 52,
-        y: CY + Math.sin(a) * 52,
+        x: CX + Math.cos(a) * 64,
+        y: CY + Math.sin(a) * 64,
         vx: 0,
         vy: 0,
         type: i % 2 === 0 ? 1 : 2,
@@ -866,6 +880,7 @@ export const useCarromStore = defineStore('carrom', () => {
     pieces,
     striker,
     currentPlayer,
+    strikerZone,
     teamScores,
     teamColors,
     phase,

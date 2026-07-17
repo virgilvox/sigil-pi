@@ -141,6 +141,17 @@ export const BAKED_GAMES: BakedGame[] = [
     component: () => import('@/components/robot-face/RobotFaceGame.vue')
   },
   {
+    id: 'grommet',
+    name: 'GROMMET',
+    route: '/grommet',
+    color: '#8A7BF7',
+    description: 'MUSE BRAINWAVES',
+    source: 'baked',
+    order: 85,
+    icon: 'grommet',
+    component: () => import('@/components/grommet/GrommetGame.vue')
+  },
+  {
     id: 'sigil-engine',
     name: 'SIGIL ENGINE',
     route: '/sigil-engine',

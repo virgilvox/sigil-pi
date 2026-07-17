@@ -13,9 +13,9 @@ export function useCarromRendering(store: CarromStore) {
 
     const CX = store.CX
     const CY = store.CY
-    const WALL_INNER = 290
-    const WALL_OUTER = 345
-    const BOARD_R = 290
+    const WALL_INNER = 322
+    const WALL_OUTER = 350
+    const BOARD_R = 322
 
     // Background
     ctx.fillStyle = '#060606'
@@ -72,7 +72,7 @@ export function useCarromRendering(store: CarromStore) {
     const zb = CY + store.ZONE_WIDTH / 2
 
     // Horizontal zones (top and bottom)
-    ;[CY + 150, CY - 150].forEach(y => {
+    ;[CY + 210, CY - 210].forEach(y => {
       ctx.beginPath()
       ctx.moveTo(zl, y)
       ctx.lineTo(zr, y)
@@ -86,7 +86,7 @@ export function useCarromRendering(store: CarromStore) {
     })
 
     // Vertical zones (left and right)
-    ;[CX + 150, CX - 150].forEach(x => {
+    ;[CX + 210, CX - 210].forEach(x => {
       ctx.beginPath()
       ctx.moveTo(x, zt)
       ctx.lineTo(x, zb)
@@ -101,16 +101,16 @@ export function useCarromRendering(store: CarromStore) {
 
     // Strike arcs
     ctx.beginPath()
-    ctx.arc(CX, CY + 150, 25, Math.PI * 1.15, Math.PI * 1.85)
+    ctx.arc(CX, CY + 210, 30, Math.PI * 1.15, Math.PI * 1.85)
     ctx.stroke()
     ctx.beginPath()
-    ctx.arc(CX, CY - 150, 25, Math.PI * 0.15, Math.PI * 0.85)
+    ctx.arc(CX, CY - 210, 30, Math.PI * 0.15, Math.PI * 0.85)
     ctx.stroke()
     ctx.beginPath()
-    ctx.arc(CX + 150, CY, 25, Math.PI * 0.65, Math.PI * 1.35)
+    ctx.arc(CX + 210, CY, 30, Math.PI * 0.65, Math.PI * 1.35)
     ctx.stroke()
     ctx.beginPath()
-    ctx.arc(CX - 150, CY, 25, -Math.PI * 0.35, Math.PI * 0.35)
+    ctx.arc(CX - 210, CY, 30, -Math.PI * 0.35, Math.PI * 0.35)
     ctx.stroke()
 
     // Pockets
@@ -411,20 +411,21 @@ export function useCarromRendering(store: CarromStore) {
   }
 
   function drawSlider(ctx: CanvasRenderingContext2D): void {
-    const zone = store.ZONES[store.currentPlayer]
+    const z = store.strikerZone
+    const zone = store.ZONES[z]
     const horizontal = zone.horizontal
 
     let trackX: number, trackY: number, trackW: number, trackH: number, handleX: number, handleY: number
 
     if (horizontal) {
       trackX = store.CX - 110
-      trackY = zone.y + (store.currentPlayer === 0 ? 45 : -53)
+      trackY = zone.y + (z === 0 ? 45 : -53)   // z 0=bottom (below), 2=top (above)
       trackW = 220
       trackH = 36
       handleX = trackX + store.sliderPos * trackW
       handleY = trackY + 18
     } else {
-      trackX = zone.x + (store.currentPlayer === 1 ? 45 : -53) - 18
+      trackX = zone.x + (z === 1 ? 45 : -53) - 18   // z 1=right, 3=left
       trackY = store.CY - 110
       trackW = 36
       trackH = 220
@@ -492,14 +493,15 @@ export function useCarromRendering(store: CarromStore) {
     }
 
     // Power bar
-    const zone = store.ZONES[store.currentPlayer]
+    const z = store.strikerZone
+    const zone = store.ZONES[z]
     let barX: number, barY: number
 
     if (zone.horizontal) {
       barX = store.CX - 70
-      barY = zone.y + (store.currentPlayer === 0 ? 90 : -98)
+      barY = zone.y + (z === 0 ? 90 : -98)
     } else {
-      barX = zone.x + (store.currentPlayer === 1 ? 50 : -190)
+      barX = zone.x + (z === 1 ? 50 : -190)
       barY = store.CY - 5
     }
 

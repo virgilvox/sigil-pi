@@ -26,6 +26,8 @@ export const APP_ICONS: Record<string, string> = {
   'prize-wheel': '<circle cx="50" cy="50" r="31"/><path d="M50 19 L50 81 M19 50 L81 50 M28 28 L72 72 M72 28 L28 72"/><circle cx="50" cy="50" r="5" fill="currentColor"/>',
   // robot head
   'robot-face': '<rect x="24" y="30" width="52" height="42" rx="7"/><circle cx="39" cy="50" r="5"/><circle cx="61" cy="50" r="5"/><path d="M41 63 L59 63 M50 30 L50 20 M50 20 L44 15 M50 20 L56 15"/>',
+  // muse brainwave headband — sensor band arc + a brainwave trace
+  'grommet': '<path d="M16 52 Q50 14 84 52"/><circle cx="16" cy="52" r="4.5" fill="currentColor"/><circle cx="84" cy="52" r="4.5" fill="currentColor"/><path d="M22 70 Q32 58 42 70 Q52 82 62 70 Q71 60 80 70"/><circle cx="50" cy="40" r="3" fill="currentColor"/>',
   // rune sigil in a diamond
   'sigil-engine': '<path d="M50 15 L75 50 L50 85 L25 50 Z"/><path d="M50 31 L50 69 M33 50 L67 50"/><circle cx="50" cy="50" r="7"/>'
 }
