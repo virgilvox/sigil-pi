@@ -184,7 +184,7 @@ function draw(): void {
 }
 
 onMounted(() => { ctx = canvasRef.value?.getContext('2d') ?? null; raf = requestAnimationFrame(draw) })
-onUnmounted(() => cancelAnimationFrame(raf))
+onUnmounted(() => { cancelAnimationFrame(raf); clearLong() })
 </script>
 
 <template>

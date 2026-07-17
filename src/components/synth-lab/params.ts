@@ -90,8 +90,10 @@ const MOD_ENV = ['mAttack', 'mDecay', 'mSustain', 'mRelease']
 
 /**
  * Split an engine's ParamSpec[] into labelled pages sized for the circular knob
- * wheel. Envelopes get their own pages; FM operators paginate 2-per-page;
- * additive partials paginate by 12 level knobs.
+ * wheel. Envelope grouping is engine-aware (a bare `decay`/`attack`/`release`
+ * only counts as an amp-envelope stage when the engine has a real `sustain`, so
+ * additive/pluck spectral decays stay with the sound). FM operators paginate
+ * 2-per-page; additive partials paginate 4-per-page with partial/target/detune.
  */
 export function buildPages(engineId: string, specs: ParamSpec[]): KnobPage[] {
   const byName = new Map(specs.map(s => [s.name, s]))
@@ -100,10 +102,15 @@ export function buildPages(engineId: string, specs: ParamSpec[]): KnobPage[] {
   for (const s of specs) {
     const op = /^(?:ratio|level|fixed)(\d+)$/.exec(s.name)
     if (op) opNums.add(Number(op[1]))
-    const pt = /^partial(\d+)$/.exec(s.name)
+    const pt = /^(?:partial|target|detune)(\d+)$/.exec(s.name)
     if (pt) partNums.add(Number(pt[1]))
   }
-  const isEnv = (n: string) => AMP_ENV.includes(n) || FILT_ENV.includes(n) || MOD_ENV.includes(n)
+  // Only treat ADSR names as envelope stages when the matching sustain exists.
+  const ampEnvOn = byName.has('sustain')
+  const filtEnvOn = byName.has('fSustain')
+  const modEnvOn = byName.has('mSustain')
+  const isEnv = (n: string) =>
+    (ampEnvOn && AMP_ENV.includes(n)) || (filtEnvOn && FILT_ENV.includes(n)) || (modEnvOn && MOD_ENV.includes(n))
   const isOp = (n: string) => /^(?:ratio|level|fixed)\d+$/.test(n)
   const isPart = (n: string) => /^(?:partial|target|detune)\d+$/.test(n)
 
@@ -121,9 +128,9 @@ export function buildPages(engineId: string, specs: ParamSpec[]): KnobPage[] {
   }
 
   // Envelopes
-  const amp = AMP_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]
-  const filt = FILT_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]
-  const mod = MOD_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]
+  const amp = ampEnvOn ? (AMP_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]) : []
+  const filt = filtEnvOn ? (FILT_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]) : []
+  const mod = modEnvOn ? (MOD_ENV.map(n => byName.get(n)).filter(Boolean) as ParamSpec[]) : []
   if (amp.length) pages.push({ id: 'amp', label: filt.length || mod.length ? 'AMP ENV' : 'ENV', specs: amp })
   if (filt.length) pages.push({ id: 'filt', label: 'FILTER ENV', specs: filt })
   if (mod.length) pages.push({ id: 'mod', label: 'MOD ENV', specs: mod })
@@ -141,12 +148,17 @@ export function buildPages(engineId: string, specs: ParamSpec[]): KnobPage[] {
     pages.push({ id: `op${grp[0]}`, label: grp.length > 1 ? `OP ${grp[0]}·${grp[1]}` : `OP ${grp[0]}`, specs: specsForOps })
   }
 
-  // Additive partials — 12 level knobs per page
+  // Additive partials — 4 partials per page, each with level/morph-target/detune
   const parts = [...partNums].sort((a, b) => a - b)
-  for (let i = 0; i < parts.length; i += 12) {
-    const grp = parts.slice(i, i + 12)
-    const specsForParts = grp.map(n => byName.get(`partial${n}`)).filter(Boolean) as ParamSpec[]
-    pages.push({ id: `part${grp[0]}`, label: `PARTIALS ${grp[0]}–${grp[grp.length - 1]}`, specs: specsForParts })
+  for (let i = 0; i < parts.length; i += 4) {
+    const grp = parts.slice(i, i + 4)
+    const specsForParts: ParamSpec[] = []
+    for (const n of grp) {
+      for (const pfx of ['partial', 'target', 'detune']) {
+        const s = byName.get(`${pfx}${n}`); if (s) specsForParts.push(s)
+      }
+    }
+    pages.push({ id: `part${grp[0]}`, label: `P ${grp[0]}–${grp[grp.length - 1]}`, specs: specsForParts })
   }
 
   return pages

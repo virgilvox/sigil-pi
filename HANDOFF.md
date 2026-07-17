@@ -48,26 +48,26 @@ npm start            # zero-dep Node server: serves dist + scans drop-in games
 | NULL ARCANA | `null-arcana` | Digital-tarot oracle. Sigils **scattered across 3 concentric rings** like the reference. |
 | NULL SYNTH | `null-synth` | Sigil sound machine, **ported to bellowsjs** (6 `va` suit voices, clock sequencer). UI unchanged. |
 | ORRERY | `orrery` | Radial multi-track step sequencer (bellows). Solid. |
-| SYNTH LAB | `synth-lab` | **3-mode bellows synth** (BENCH/PLAY/SEQ). **Functional but rough — see Known Issues.** |
+| SYNTH LAB | `synth-lab` | **3-mode bellows synth** (BENCH/PLAY/SEQ). Overhauled: colorful + coherent, faithful to the bellows workbench (see below). |
 | CARROM / PRIZE WHEEL / ROBOT FACE / SIGIL ENGINE | — | Original games, working. |
 | PULSE (`dropins/pulse-demo.html`) | drop-in | Example single-file drop-in. |
 
 ---
 
-## Known issues / next-up (the current focus)
+## Color system (whole app)
 
-**SYNTH LAB is the priority.** It works but is janky and under-designed:
-- **Too dark / monochrome.** The whole app leans very dark/tan; the synth (and selector) need real **color**.
-- **BENCH** (`WorkbenchMode.vue`): an auto-generated knob wheel over any engine's `ParamSpec[]`. Cramped, hard to read, no fx rack, no preset browsing — far from the repo's `WorkbenchView`/`InstrumentView` polish.
-- **PLAY** (`InstrumentMode.vue`): a radial scale-wheel keyboard (multi-touch). **The radial note buttons are liked** — but they need **color** and a **more complete instrument list** (currently just preset prev/next by family).
-- **SEQ** (`StepSeqMode.vue`): per-step-instrument sequencer. OK but visually flat.
-- The three modes don't yet **faithfully translate the bellows workbench + instrument pages** (`apps/workbench/src/views/WorkbenchView.vue`, `InstrumentView.vue`, and `components/instrument/*` + `components/bench/*`, `lib/instrument-store.ts` / `bench-store.ts`) to a circular UI.
+- **`src/styles/palette.ts`** — the shared color source. Deep-indigo substrate (`BG`), warm-bone text (`INK`), `stageGradient()` for canvas backdrops, **pitch-class → hue** (`pcHue`/`noteColor`/`noteGlow`, circle-of-fifths spread so the same note is always the same color), **engine → hue** (`ENGINE_COLOR`), **family → hue** (`FAMILY_COLOR`), **param-group → hue** (`GROUP_COLOR` + `paramGroup()` name heuristic), `TRACK_COLORS` for SEQ, and color utils (`withAlpha` handles hex/rgb/**hsl**, `mix`). `main.css` mirrors the substrate in CSS vars.
+- The home `RadialMenu` + in-game `AppSwitcher` share a rotating **spectrum aura**, glowing gradient discs, popping glyphs (`AppGlyph` has a blurred glow under-layer), gradient title, and a green **LIVE** badge on the current app.
 
-**Selector** needs to be **prettier and more thought-out** (home `RadialMenu` + `AppSwitcher`) — more color, less flat/dark, better hierarchy and motion.
+## SYNTH LAB internals (overhauled)
 
-**General:** the app is too dark overall; the user wants more color throughout.
+- **`src/components/synth-lab/params.ts`** — curve-aware `toNorm`/`fromNorm` (mirrors the bellows workbench `toSlider`/`fromSlider`), enum labels + `isStepped`, `formatValue`, and **`buildPages()`** which splits any engine's `ParamSpec[]` into wheel-sized pages (SOUND / envelopes / **FM operator pages** / **additive partial pages**).
+- **`stores/synth-lab.ts`** — full 17-engine catalogue + `engineMeta`; BENCH param editing + **fx rack** (`benchFx`, add/remove/param over all 19 effects via `inst.fx(...)`/`inst.fxParam`); full **preset bank** browsing across 8 families; the **PLAY note engine** (ledger keyed by pointer, sustain-defer, mono legato glide for string/tube presets via `param('freq', freqOf)`, multitouch polyphony, `activeNotes` lighting); SEQ per-step-instrument; `analyser()`/`meterFrame()` passthrough. Same bellows rules as before (audio objects in closures, pooled voices, numbers-only fx).
+- **BENCH** = engine picker grid + color-coded curve-aware circular knobs (paged) + fx rack sheet + audition. **PLAY** = the liked radial scale wheel, now per-pitch-class hues + active/sustained glow + preset browser + sustain/legato toggles. **SEQ** = vivid tracks, glowing steps, playhead, arm-preview, euclid. **`ScopeStrip.vue`** = shared always-on scope + level meter.
 
-**CRT perf:** the new 16-layer CRT is heavier; `performanceMode` drops the animated layers. Verify frame rate on the actual Pi; trim default layers if needed.
+## Known issues / next-up
+
+**CRT perf:** the new 16-layer CRT is heavier; `performanceMode` drops the animated layers. Verify frame rate on the actual Pi; trim default layers if needed. The new selector auras + synth glows are cheap (CSS blur / canvas), but re-check on-device.
 
 ---
 

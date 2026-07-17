@@ -71,15 +71,19 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   const activeScale = computed(() => markRaw(new Scale(scaleRoot.value, scaleName.value)))
 
   // ---------- voice resolution + pooling ----------
+  // Keys: 'preset:<id>' | 'bench:<engineId>' | '<engineId>'. The 'bench:' prefix
+  // gives the workbench its OWN pooled voice per engine so param/fx edits there
+  // never mutate the sequencer/play voice that shares the same raw engine id.
   function resolveSpec(key: string): VoiceSpec {
     if (key.startsWith('preset:')) {
       const p = getPreset(key.slice(7))
       return { engineId: p.engineId, params: { ...p.params }, gain: p.gain ?? 0.8, fx: p.fx, octave: p.octave ?? 0 }
     }
-    const def = engineDefs.get(key)
+    const engineId = key.startsWith('bench:') ? key.slice(6) : key
+    const def = engineDefs.get(engineId)
     const params: Record<string, number> = {}
     def?.params.forEach(s => { params[s.name] = s.default })
-    return { engineId: key, params, poly: def?.polyphony }
+    return { engineId, params, poly: def?.polyphony }
   }
 
   function pooledVoice(key: string): Instrument | null {
@@ -111,6 +115,8 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   const benchColor = computed(() => engineColor(benchEngine.value))
   const benchLabel = computed(() => engineDefs.get(benchEngine.value)?.label ?? benchEngine.value)
   const benchPoly = computed(() => engineDefs.get(benchEngine.value)?.polyphony ?? 1)
+  // dedicated pool key for the workbench voice (isolated from seq/play)
+  const benchKey = (): string => `bench:${benchEngine.value}`
 
   function engineMeta(id: string): { label: string; color: string; poly: number } {
     const d = engineDefs.get(id)
@@ -127,7 +133,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     if (!engineDefs.has(id)) return
     benchEngine.value = id
     loadBenchDefaults()
-    const inst = pooledVoice(id)
+    const inst = pooledVoice(benchKey())
     // re-apply defaults to a possibly-cached voice + clear its fx chain
     if (inst) {
       for (const [name, v] of Object.entries(benchParams)) inst.param(name, v)
@@ -141,7 +147,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   function setBenchParam(name: string, value: number): void {
     const v = isStepped(benchEngine.value, name) ? Math.round(value) : value
     benchParams[name] = v
-    pooledVoice(benchEngine.value)?.param(name, v)
+    pooledVoice(benchKey())?.param(name, v)
   }
   function resetBench(): void {
     selectEngine(benchEngine.value)
@@ -149,7 +155,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
 
   // --- bench fx rack ---
   function applyBenchFx(): void {
-    const inst = pooledVoice(benchEngine.value)
+    const inst = pooledVoice(benchKey())
     if (!inst) return
     inst.fx(...benchFx.map(f => ({ effectId: f.effectId, params: { ...f.params } })))
   }
@@ -168,7 +174,7 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   function setBenchFxParam(index: number, name: string, value: number): void {
     const slot = benchFx[index]; if (!slot) return
     slot.params[name] = value
-    pooledVoice(benchEngine.value)?.fxParam(index, name, value)
+    pooledVoice(benchKey())?.fxParam(index, name, value)
   }
   function fxSpecs(effectId: string): ParamSpec[] {
     return effectDefs.get(effectId)?.params ?? []
@@ -180,14 +186,14 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
   // bench audition — play the scale root (or a small chord) on the bench voice
   const benchDrums = computed(() => /^(kick|snare|hat|clap|tom|noise)$/.test(benchEngine.value))
   function auditionBench(degree = 0): void {
-    if (benchDrums.value) { trigger(benchEngine.value, 48, 0.95, 0.5); return }
+    if (benchDrums.value) { trigger(benchKey(), 48, 0.95, 0.5); return }
     const midi = activeScale.value.degreeToMidi(degree, 4)
-    trigger(benchEngine.value, midi, 0.9, benchPoly.value > 1 ? 0.9 : 0.5)
+    trigger(benchKey(), midi, 0.9, benchPoly.value > 1 ? 0.9 : 0.5)
   }
   function auditionChord(): void {
-    if (benchDrums.value) { trigger(benchEngine.value, 48, 0.95, 0.5); return }
+    if (benchDrums.value) { trigger(benchKey(), 48, 0.95, 0.5); return }
     const s = activeScale.value
-    for (const d of [0, 2, 4]) trigger(benchEngine.value, s.degreeToMidi(d, 4), 0.8, 1.0)
+    for (const d of [0, 2, 4]) trigger(benchKey(), s.degreeToMidi(d, 4), 0.8, 1.0)
   }
 
   // ═══════════════ PLAY ═══════════════
@@ -284,8 +290,14 @@ export const useSynthLabStore = defineStore('synth-lab', () => {
     }
     const noteId = inst.on(midi, vel)
     ledger.set(key, { noteId, sounding: midi })
-    if (legatoOn.value && legatoCapable.value) { legatoStack.push({ key, midi }); legatoNoteId = noteId }
-    litInc(midi)
+    // Legato notes drive activeNotes directly (one lit note at a time); only the
+    // polyphonic path uses soundingCount so the two never cross-corrupt.
+    if (legatoOn.value && legatoCapable.value) {
+      legatoStack.push({ key, midi }); legatoNoteId = noteId
+      activeNotes.add(midi)
+    } else {
+      litInc(midi)
+    }
   }
   function playNoteOff(key: string): void {
     const entry = ledger.get(key)
