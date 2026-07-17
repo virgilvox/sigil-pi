@@ -3,68 +3,38 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGlobalStore } from '@/stores/global'
 import { useCircularLayout } from '@/composables/useCircularLayout'
+import { useGameCatalog } from '@/composables/useGameCatalog'
 import CircularViewport from './CircularViewport.vue'
 import CRTOverlay from './CRTOverlay.vue'
 
 const router = useRouter()
 const globalStore = useGlobalStore()
-const { polarToCartesian, center } = useCircularLayout(720)
-
-interface GameOption {
-  id: string
-  name: string
-  route: string
-  color: string
-  description: string
-}
-
-const games: GameOption[] = [
-  // Outer ring (5 games)
-  { id: 'sigil-lite', name: 'SIGIL', route: '/sigil-lite', color: '#e85a3c', description: 'CIRCULAR DUEL' },
-  { id: 'junk-mage', name: 'JUNK MAGE', route: '/junk-mage', color: '#4a9fff', description: 'ROGUELIKE' },
-  { id: 'null-arcana', name: 'NULL ARCANA', route: '/null-arcana', color: '#00ff88', description: 'ORACLE' },
-  { id: 'null-synth', name: 'NULL SYNTH', route: '/null-synth', color: '#ff00ff', description: 'SYNTHESIZER' },
-  { id: 'carrom', name: 'CARROM', route: '/carrom', color: '#ffa500', description: 'BOARD GAME' },
-  // Inner ring (4 games)
-  { id: 'sigil-full', name: 'SIGIL+', route: '/sigil-full', color: '#d4d0c4', description: 'WITH AUDIO' },
-  { id: 'prize-wheel', name: 'PRIZE WHEEL', route: '/prize-wheel', color: '#ffcc00', description: 'SPIN TO WIN' },
-  { id: 'robot-face', name: 'ROBOT FACE', route: '/robot-face', color: '#00ffc8', description: 'VIRTUAL PET' },
-  { id: 'sigil-engine', name: 'SIGIL ENGINE', route: '/sigil-engine', color: '#ffd700', description: 'RUNE PUZZLE' }
-]
+const { polarToCartesian } = useCircularLayout(720)
+const { games } = useGameCatalog()
 
 const hoveredGame = ref<string | null>(null)
 
+// Split the catalog across two rings, filling the outer ring first. Ring sizes
+// scale with the total count so the home screen adapts as drop-in games appear.
 const gamePositions = computed(() => {
+  const list = games.value
+  const total = list.length
   const outerRadius = 260
   const innerRadius = 140
-  const outerCount = 5
-  const innerCount = 4
+  // Up to 6 on the outer ring; remainder goes inner. Keeps spacing readable.
+  const outerCount = Math.min(total, Math.ceil(total / 2) + (total > 9 ? 1 : 0), 7)
+  const innerCount = Math.max(total - outerCount, 0)
 
-  return games.map((game, index) => {
-    let radius: number
-    let angle: number
-    let ringIndex: number
-
-    if (index < outerCount) {
-      // Outer ring: 5 games
-      radius = outerRadius
-      ringIndex = index
-      angle = -Math.PI / 2 + (ringIndex / outerCount) * Math.PI * 2
-    } else {
-      // Inner ring: 4 games
-      radius = innerRadius
-      ringIndex = index - outerCount
-      angle = -Math.PI / 2 + Math.PI / 4 + (ringIndex / innerCount) * Math.PI * 2
-    }
+  return list.map((game, index) => {
+    const isInner = index >= outerCount
+    const radius = isInner ? innerRadius : outerRadius
+    const ringIndex = isInner ? index - outerCount : index
+    const ringCount = isInner ? Math.max(innerCount, 1) : Math.max(outerCount, 1)
+    const offset = isInner ? Math.PI / ringCount : 0
+    const angle = -Math.PI / 2 + offset + (ringIndex / ringCount) * Math.PI * 2
 
     const pos = polarToCartesian(angle, radius)
-    return {
-      ...game,
-      x: pos.x,
-      y: pos.y,
-      angle,
-      isInner: index >= outerCount
-    }
+    return { ...game, x: pos.x, y: pos.y, angle, isInner }
   })
 })
 

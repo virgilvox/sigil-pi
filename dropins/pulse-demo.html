@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pulse</title>
+  <!-- Drop-in metadata (all optional) -->
+  <meta name="sigil:id" content="pulse-demo">
+  <meta name="sigil:name" content="PULSE">
+  <meta name="sigil:color" content="#b47cff">
+  <meta name="sigil:description" content="TAP TOY">
+  <meta name="sigil:order" content="500">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #06060a; }
+    body { display: flex; align-items: center; justify-content: center; font-family: 'Courier New', monospace; }
+    canvas { width: 100%; height: 100%; display: block; }
+    .hint {
+      position: absolute; bottom: 14%; left: 0; right: 0; text-align: center;
+      color: rgba(180, 124, 255, 0.55); letter-spacing: 0.35em; font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hint">TAP ANYWHERE</div>
+  <script>
+    // Minimal self-contained drop-in example: tap to emit expanding rings + a tone.
+    // Authored in the 720 logical space; the host scales it to any round panel.
+    const canvas = document.getElementById('c')
+    const ctx = canvas.getContext('2d')
+    const SIZE = 720
+    canvas.width = SIZE
+    canvas.height = SIZE
+
+    let audio = null
+    function tone(freq) {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)()
+        const o = audio.createOscillator()
+        const g = audio.createGain()
+        o.type = 'sine'
+        o.frequency.value = freq
+        g.gain.value = 0.0001
+        g.gain.exponentialRampToValueAtTime(0.25, audio.currentTime + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.5)
+        o.connect(g); g.connect(audio.destination)
+        o.start(); o.stop(audio.currentTime + 0.5)
+      } catch (e) {}
+    }
+
+    const rings = []
+    function toLocal(clientX, clientY) {
+      const r = canvas.getBoundingClientRect()
+      return { x: (clientX - r.left) / r.width * SIZE, y: (clientY - r.top) / r.height * SIZE }
+    }
+    function emit(x, y) {
+      const hue = 250 + Math.random() * 60
+      rings.push({ x, y, r: 8, a: 1, hue })
+      tone(220 + Math.random() * 440)
+    }
+    canvas.addEventListener('pointerdown', e => { const p = toLocal(e.clientX, e.clientY); emit(p.x, p.y) })
+
+    function frame() {
+      ctx.fillStyle = 'rgba(6, 6, 10, 0.25)'
+      ctx.fillRect(0, 0, SIZE, SIZE)
+      for (let i = rings.length - 1; i >= 0; i--) {
+        const ring = rings[i]
+        ring.r += 6
+        ring.a -= 0.012
+        if (ring.a <= 0) { rings.splice(i, 1); continue }
+        ctx.beginPath()
+        ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2)
+        ctx.strokeStyle = `hsla(${ring.hue}, 90%, 65%, ${ring.a})`
+        ctx.lineWidth = 3
+        ctx.stroke()
+      }
+      requestAnimationFrame(frame)
+    }
+    frame()
+  </script>
+</body>
+</html>

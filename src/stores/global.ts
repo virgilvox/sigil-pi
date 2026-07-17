@@ -1,9 +1,41 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
+// Persisted display tuning. The app renders in a fixed 720 logical space that is
+// CSS-scaled to whatever round panel is attached (4" ~720px, 5" ~1080px, etc.), so
+// these two knobs let the owner dial the fit to their exact glass without a rebuild.
+const STORAGE_KEY = 'sigil-pi:display'
+
+interface DisplaySettings {
+  /** 0 = auto-detect from the framebuffer; >0 forces a diameter for odd panels. */
+  diameterOverride: number
+  /** Bezel inset. 1 = fill edge-to-edge; <1 shrinks the circle inside the glass. */
+  gameScale: number
+}
+
+function loadDisplaySettings(): DisplaySettings {
+  const defaults: DisplaySettings = { diameterOverride: 0, gameScale: 0.92 }
+  if (typeof localStorage === 'undefined') return defaults
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw) as Partial<DisplaySettings>
+    return {
+      diameterOverride: Number(parsed.diameterOverride) || 0,
+      gameScale: Number(parsed.gameScale) || defaults.gameScale
+    }
+  } catch {
+    return defaults
+  }
+}
+
 export const useGlobalStore = defineStore('global', () => {
+  const persisted = loadDisplaySettings()
+
   // Display settings
   const displaySize = ref(720)
+  const diameterOverride = ref(persisted.diameterOverride)
+  const gameScale = ref(persisted.gameScale)
   const crtEnabled = ref(true)
   const performanceMode = ref(false)
 
@@ -71,15 +103,54 @@ export const useGlobalStore = defineStore('global', () => {
     currentGame.value = game
   }
 
+  function applyDisplayVars(): void {
+    const root = document.documentElement.style
+    root.setProperty('--display-size', `${displaySize.value}px`)
+    root.setProperty('--game-scale', `${gameScale.value}`)
+    // Uniform scale from the 720 logical stage to the physical panel, with the
+    // bezel-inset factor folded in. Consumed by CircularViewport's .viewport-stage.
+    root.setProperty('--stage-scale', `${(displaySize.value / 720) * gameScale.value}`)
+  }
+
+  function persistDisplaySettings(): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        diameterOverride: diameterOverride.value,
+        gameScale: gameScale.value
+      }))
+    } catch {
+      // Ignore storage failures (private mode / quota) — settings just won't persist.
+    }
+  }
+
   function detectDisplaySize(): void {
-    const size = Math.min(window.innerWidth, window.innerHeight)
-    displaySize.value = size >= 700 ? 720 : size >= 480 ? 480 : size
-    document.documentElement.style.setProperty('--display-size', `${displaySize.value}px`)
+    // The visible circle on both the 4" and 5" round panels fills the framebuffer's
+    // shorter side, so the true diameter is min(width, height). No snapping to 720 —
+    // that capped the 5" panel to a small centered circle. An explicit override wins
+    // for unusual panels where the round glass is smaller than the framebuffer.
+    const auto = Math.min(window.innerWidth, window.innerHeight)
+    displaySize.value = diameterOverride.value > 0 ? diameterOverride.value : auto
+    applyDisplayVars()
+  }
+
+  function setGameScale(scale: number): void {
+    gameScale.value = Math.max(0.5, Math.min(1, scale))
+    applyDisplayVars()
+    persistDisplaySettings()
+  }
+
+  function setDiameterOverride(diameter: number): void {
+    diameterOverride.value = Math.max(0, Math.round(diameter))
+    detectDisplaySize()
+    persistDisplaySettings()
   }
 
   return {
     // State
     displaySize,
+    diameterOverride,
+    gameScale,
     crtEnabled,
     performanceMode,
     muted,
@@ -101,6 +172,8 @@ export const useGlobalStore = defineStore('global', () => {
     openOverlayMenu,
     closeOverlayMenu,
     setCurrentGame,
-    detectDisplaySize
+    detectDisplaySize,
+    setGameScale,
+    setDiameterOverride
   }
 })

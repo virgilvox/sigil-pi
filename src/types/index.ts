@@ -21,6 +21,36 @@ export interface GameColors {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// GAME CATALOG TYPES
+// ═══════════════════════════════════════════════════════════════════
+
+/** A launchable app/game in the hub — either baked into the Vue bundle or a drop-in HTML file. */
+export interface GameEntry {
+  id: string
+  name: string
+  /** Vue-router path to launch this entry (drop-ins use /play/:id). */
+  route: string
+  color: string
+  description: string
+  /** Source: 'baked' = compiled Vue route, 'dropin' = single-file HTML scanned at runtime. */
+  source: 'baked' | 'dropin'
+  /** Lower sorts first in menus; baked defaults keep their authored order. */
+  order?: number
+  /** For drop-ins: the served HTML filename under /dropins/. */
+  file?: string
+}
+
+/** Raw drop-in descriptor returned by the runtime server's /api/games scan. */
+export interface DropinManifestEntry {
+  id: string
+  name: string
+  file: string
+  color?: string
+  description?: string
+  order?: number
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SIGIL TYPES
 // ═══════════════════════════════════════════════════════════════════
 

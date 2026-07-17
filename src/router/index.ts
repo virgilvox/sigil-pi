@@ -1,4 +1,15 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { BAKED_GAMES } from '@/games/registry'
+
+// Routes are derived from the baked-game registry (single source of truth) plus a
+// generic host for drop-in HTML games. Adding a baked game = one registry entry;
+// adding a drop-in = one HTML file in the drop-in folder (no route edit needed).
+const gameRoutes: RouteRecordRaw[] = BAKED_GAMES.map(game => ({
+  path: game.route,
+  name: game.id,
+  component: game.component,
+  props: game.props
+}))
 
 const routes: RouteRecordRaw[] = [
   {
@@ -6,52 +17,12 @@ const routes: RouteRecordRaw[] = [
     name: 'home',
     component: () => import('@/components/core/RadialMenu.vue')
   },
+  ...gameRoutes,
   {
-    path: '/sigil-lite',
-    name: 'sigil-lite',
-    component: () => import('@/components/sigil/SigilGame.vue'),
-    props: { mode: 'lite' }
-  },
-  {
-    path: '/sigil-full',
-    name: 'sigil-full',
-    component: () => import('@/components/sigil/SigilGame.vue'),
-    props: { mode: 'full' }
-  },
-  {
-    path: '/junk-mage',
-    name: 'junk-mage',
-    component: () => import('@/components/junk-mage/JunkMageGame.vue')
-  },
-  {
-    path: '/null-arcana',
-    name: 'null-arcana',
-    component: () => import('@/components/null-arcana/NullArcanaGame.vue')
-  },
-  {
-    path: '/prize-wheel',
-    name: 'prize-wheel',
-    component: () => import('@/components/prize-wheel/PrizeWheelGame.vue')
-  },
-  {
-    path: '/null-synth',
-    name: 'null-synth',
-    component: () => import('@/components/null-synth/NullSynthGame.vue')
-  },
-  {
-    path: '/robot-face',
-    name: 'robot-face',
-    component: () => import('@/components/robot-face/RobotFaceGame.vue')
-  },
-  {
-    path: '/sigil-engine',
-    name: 'sigil-engine',
-    component: () => import('@/components/sigil-engine/SigilEngineGame.vue')
-  },
-  {
-    path: '/carrom',
-    name: 'carrom',
-    component: () => import('@/components/carrom/CarromGame.vue')
+    // Drop-in single-file HTML games, hosted in a sandboxed iframe.
+    path: '/play/:id',
+    name: 'dropin',
+    component: () => import('@/games/DropinHost.vue')
   }
 ]
 

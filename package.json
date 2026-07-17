@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.mjs",
+    "serve": "npm run build && node server/index.mjs"
   },
   "dependencies": {
     "pinia": "^2.1.7",
