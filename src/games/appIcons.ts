@@ -36,6 +36,8 @@ export const APP_ICONS: Record<string, string> = {
   'washer': '<circle cx="50" cy="50" r="34"/><path d="M50 12 L50 24 M50 76 L50 88 M12 50 L24 50 M76 50 L88 50"/><circle cx="63" cy="37" r="4.5" fill="currentColor"/><path d="M63 20 L63 30 M63 44 L63 54 M46 37 L56 37 M70 37 L80 37"/>',
   // round-display card carousel — a card inside the display ring with swipe dots
   'kiosk': '<circle cx="50" cy="50" r="34"/><rect x="35" y="28" width="30" height="36" rx="4"/><path d="M41 37 L59 37 M41 45 L59 45 M41 53 L52 53"/><circle cx="42" cy="72" r="2.2" fill="currentColor"/><circle cx="50" cy="72" r="2.2" fill="currentColor"/><circle cx="58" cy="72" r="2.2" fill="currentColor"/>',
+  // thermal printer — feed sheet in, body, printed slip with text lines + status LED
+  'platen': '<path d="M32 38 L32 22 L68 22 L68 38"/><rect x="20" y="38" width="60" height="26" rx="4"/><rect x="32" y="58" width="36" height="26" rx="2"/><path d="M39 66 L61 66 M39 73 L55 73"/><circle cx="70" cy="51" r="2.5" fill="currentColor"/>',
   // rune sigil in a diamond
   'sigil-engine': '<path d="M50 15 L75 50 L50 85 L25 50 Z"/><path d="M50 31 L50 69 M33 50 L67 50"/><circle cx="50" cy="50" r="7"/>'
 }

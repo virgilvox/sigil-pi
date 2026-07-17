@@ -187,6 +187,17 @@ export const BAKED_GAMES: BakedGame[] = [
     props: { kind: 'images' }
   },
   {
+    id: 'platen',
+    name: 'PLATEN',
+    route: '/platen',
+    color: '#a3e635',
+    description: 'THERMAL PRINTER',
+    source: 'baked',
+    order: 87,
+    icon: 'platen',
+    component: () => import('@/components/platen/PlatenGame.vue')
+  },
+  {
     id: 'kiosk',
     name: 'KIOSK',
     route: '/kiosk',
