@@ -17,7 +17,10 @@
   --pw:44vmin; --ph:44vmin;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-html,body{margin:0; height:100%; width:100%; overflow:hidden; background:#000; touch-action:none}
+/* pan-y (not none) so the SETUP sheet finger-scrolls — an ancestor's
+   touch-action:none blocks descendant scrolling in Chromium. The draw surface
+   (.paperwrap → #paper/#textlayer) pins touch-action:none itself, below. */
+html,body{margin:0; height:100%; width:100%; overflow:hidden; background:#000; touch-action:pan-y}
 body{
   font-family:var(--font); color:var(--text); font-size:13px; line-height:1.4;
   display:grid; place-items:center; user-select:none;
@@ -130,6 +133,7 @@ button svg{ width:22px; height:22px; stroke:currentColor; stroke-width:2; fill:n
   width:var(--pw); height:var(--ph);
   box-shadow:0 0 0 1px #000, 0 0 34px rgba(94,234,212,0.10), 6px 6px 0 rgba(0,0,0,0.6);
   background:var(--paper); border-radius:2px; overflow:hidden;
+  touch-action:none;   /* drawing + text drag here never scroll-hijack */
 }
 .paperwrap .head{ position:absolute; top:0; left:0; right:0; height:8px; z-index:3;
   background:linear-gradient(#e4e2db,#efeee8); border-bottom:1px solid rgba(0,0,0,0.14) }
@@ -908,6 +912,11 @@ async function getChar(svc, uuid){ try{ return await svc.getCharacteristic(uuid)
    so the picker shows printers instead of every ble device in range */
 const KNOWN_PREFIXES = ['YHK','GB0','GB2','GT0','GT2','MX0','MX1','MXW','MX','Cat','cat',
   'M01','M02','M03','M04','T02','M110','M120','M200','M220','Phomemo','PeriPage','MPT','JX','PT-'];
+// Cat-family printers speak the 0x51 0x78 protocol regardless of transport (some
+// expose it over an ISSC/UART BLE service, which discovers as a generic writable
+// char). Detect them by name so we don't wrongly send ESC/POS raster.
+const CAT_NAME_RE = /^(YHK|GB0|GB2|GT0|GT2|MX0|MX1|MXW|YT0|Cat)/i;
+function looksLikeCat(name){ return !!name && CAT_NAME_RE.test(String(name).trim()); }
 function loadPrefixes(){
   try{ const s = localStorage.getItem('platen.prefixes'); if(s) return JSON.parse(s)||[]; }catch(e){}
   return [];
@@ -996,7 +1005,9 @@ async function bind(device, silent){
         }
         if(wc) break;
       }
-      fam = 'ESCPOS';
+      // a cat printer over a UART transport still needs the 0x51 0x78 protocol
+      fam = looksLikeCat(device.name) ? 'CAT' : 'ESCPOS';
+      log('generic transport → '+fam+' protocol (by name: '+(device.name||'?')+')', 'dim');
     }
 
     if(!wc){ throw new Error('no writable characteristic — if you see services above, add that uuid in setup'); }
