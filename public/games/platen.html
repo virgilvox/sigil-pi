@@ -1010,9 +1010,12 @@ async function bind(device, silent){
     savePrefix(device.name);
     if(fam === 'CAT') $('darkR').disabled = false; else $('darkR').disabled = true;
   }catch(err){
-    log('connect failed: '+err.message, 'err');
-    if(!silent) flash('connect failed', 'err');
-    setDot(''); setFam('NO PRINTER','tap connect');
+    const msg = (err && err.message) ? err.message : 'connect failed';
+    log('connect failed: '+msg, 'err');
+    // surface the REAL reason on-screen (the round LCD makes the console hard to
+    // read): distinguishes a service/discovery miss from a link-level failure.
+    if(!silent){ flash(msg, 'err'); flashT && clearTimeout(flashT); flashT = setTimeout(()=>$('flash').classList.remove('show'), 6000); }
+    setDot(''); setFam('LINK FAILED', msg.slice(0, 42) || 'tap connect');
   }
 }
 
