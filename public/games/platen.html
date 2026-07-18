@@ -861,6 +861,11 @@ const UUID = {
   CAT:'0000ae30-0000-1000-8000-00805f9b34fb',
   CAT_W:'0000ae01-0000-1000-8000-00805f9b34fb',
   CAT_N:'0000ae02-0000-1000-8000-00805f9b34fb',
+  // newer cat-family variant (GB0x/MX etc.) — same 0x51 0x78 protocol, service
+  // and chars relocated from the AE30 block to AF30/AF01/AF02.
+  CAT2:'0000af30-0000-1000-8000-00805f9b34fb',
+  CAT2_W:'0000af01-0000-1000-8000-00805f9b34fb',
+  CAT2_N:'0000af02-0000-1000-8000-00805f9b34fb',
   PH:'0000ff00-0000-1000-8000-00805f9b34fb',
   PH_W:'0000ff02-0000-1000-8000-00805f9b34fb',
   PH_N:'0000ff03-0000-1000-8000-00805f9b34fb',
@@ -880,7 +885,7 @@ function short2full(u){
 // ESC-POS it includes the ISSC/Microchip transparent UART (49535343…, used by a
 // huge range of cheap 58mm printers) and the generic FFF0/FEE7/FFE5 modules.
 const PRINTER_SERVICES = [
-  UUID.CAT, UUID.PH, UUID.S18F0,
+  UUID.CAT, UUID.CAT2, UUID.PH, UUID.S18F0,
   '0000ff80-0000-1000-8000-00805f9b34fb',
   '0000ffe0-0000-1000-8000-00805f9b34fb',
   '0000ffe5-0000-1000-8000-00805f9b34fb',
@@ -957,6 +962,16 @@ async function bind(device, silent){
       fam = 'CAT';
       wc = await getChar(svc, UUID.CAT_W);
       nc = await getChar(svc, UUID.CAT_N);
+    } else if((svc = await getService(UUID.CAT2))){   // newer AF30 cat variant
+      fam = 'CAT';
+      wc = await getChar(svc, UUID.CAT2_W);
+      nc = await getChar(svc, UUID.CAT2_N);
+      if(!wc){                                        // char uuids vary on some units — grab whatever's writable
+        for(const c of await svc.getCharacteristics()){
+          if(!wc && (c.properties.write || c.properties.writeWithoutResponse)) wc = c;
+          if(!nc && c.properties.notify) nc = c;
+        }
+      }
     } else if((svc = await getService(UUID.PH))){
       fam = 'PHOMEMO';
       wc = await getChar(svc, UUID.PH_W);
