@@ -49,7 +49,10 @@ onUnmounted(() => {
 
 <template>
   <div ref="appRef" class="app">
-    <RouterView />
+    <!-- key by path so routes that share one component but differ only in props
+         (VIDEOS/IMAGES → MediaViewer, SIGIL/SIGIL+ → SigilGame) get a fresh
+         instance instead of a reused one whose onMounted setup never re-runs. -->
+    <RouterView :key="$route.path" />
 
     <Transition name="handle-fade">
       <button

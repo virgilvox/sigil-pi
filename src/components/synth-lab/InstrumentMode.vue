@@ -171,7 +171,9 @@ const thumb = computed(() => octPoint(store.octave))
 const capTop = computed(() => octPoint(3.7))     // "OCT" caption above the top rung
 const octArcPath = computed(() => {
   const lo = octPoint(-3), hi = octPoint(3)
-  return `M ${lo.x.toFixed(1)} ${lo.y.toFixed(1)} A ${ARC_R} ${ARC_R} 0 0 0 ${hi.x.toFixed(1)} ${hi.y.toFixed(1)}`
+  // sweep-flag 1 → the arc bows LEFT through the leftmost point (hugging the rim),
+  // not right over the keys.
+  return `M ${lo.x.toFixed(1)} ${lo.y.toFixed(1)} A ${ARC_R} ${ARC_R} 0 0 1 ${hi.x.toFixed(1)} ${hi.y.toFixed(1)}`
 })
 function octAngleDeg(x: number, y: number): number {
   let a = Math.atan2(y - CENTER, x - CENTER) * 180 / Math.PI  // -180..180, ±180 = due-west
