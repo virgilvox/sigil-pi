@@ -874,14 +874,26 @@ function short2full(u){
   if(/^[0-9a-f]{4}$/.test(u)) return '0000'+u+'-0000-1000-8000-00805f9b34fb';
   return u;
 }
+// Common BLE thermal-printer GATT services. Web Bluetooth only lets us read a
+// service if it was declared up front, so this list has to cover the printer or
+// discovery comes back empty ("no writable characteristic"). Beyond cat/Phomemo/
+// ESC-POS it includes the ISSC/Microchip transparent UART (49535343…, used by a
+// huge range of cheap 58mm printers) and the generic FFF0/FEE7/FFE5 modules.
+const PRINTER_SERVICES = [
+  UUID.CAT, UUID.PH, UUID.S18F0,
+  '0000ff80-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000fee7-0000-1000-8000-00805f9b34fb',
+  '0000ff10-0000-1000-8000-00805f9b34fb',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+];
 function baseServices(){
-  const list = [UUID.CAT, UUID.PH, UUID.S18F0,
-    '0000ff80-0000-1000-8000-00805f9b34fb',
-    '0000ffe0-0000-1000-8000-00805f9b34fb',
-    '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-    '0000180f-0000-1000-8000-00805f9b34fb'];
   const extra = ($('customUuids').value||'').split('\n').map(s=>s.trim()).filter(Boolean).map(short2full);
-  return Array.from(new Set(list.concat(extra)));
+  return Array.from(new Set(PRINTER_SERVICES.concat(extra)));
 }
 
 async function getService(uuid){ try{ return await state.server.getPrimaryService(uuid); }catch(e){ return null; } }
@@ -907,10 +919,9 @@ function savePrefix(name){
 function pickerFilters(){
   const set = new Set(KNOWN_PREFIXES.concat(loadPrefixes()));
   const filters = Array.from(set).map(p=>({ namePrefix:p }));
-  // devices that advertise a known printer service show up even with an odd name
-  [UUID.CAT, UUID.PH, UUID.S18F0,
-   '0000ff80-0000-1000-8000-00805f9b34fb',
-   '0000ffe0-0000-1000-8000-00805f9b34fb'].forEach(s=>filters.push({ services:[s] }));
+  // devices advertising a known printer service show up even with an odd name —
+  // and picking via a service filter auto-grants access to that service.
+  PRINTER_SERVICES.forEach(s=>filters.push({ services:[s] }));
   return filters;
 }
 
@@ -955,10 +966,15 @@ async function bind(device, silent){
       wc = await getChar(svc, UUID.W2AF1);
       nc = await getChar(svc, UUID.N2AF0);
     } else {
-      // generic: first writable characteristic anywhere we can see
+      // generic: first writable characteristic anywhere we can see. Log what the
+      // printer actually exposes so an unlisted service is diagnosable from setup.
       const all = await state.server.getPrimaryServices();
+      log('generic scan: '+all.length+' service(s) visible', 'dim');
       for(const s of all){
         const chars = await s.getCharacteristics();
+        const props = chars.map(c=>c.uuid.slice(4,8)
+          +(c.properties.write?'w':'')+(c.properties.writeWithoutResponse?'W':'')+(c.properties.notify?'n':''));
+        log('svc '+s.uuid.slice(0,8)+' → '+props.join(' '), 'rx');
         for(const c of chars){
           if(c.properties.write || c.properties.writeWithoutResponse){ wc = c; svc = s; break; }
           if(c.properties.notify && !nc) nc = c;
@@ -968,7 +984,7 @@ async function bind(device, silent){
       fam = 'ESCPOS';
     }
 
-    if(!wc){ throw new Error('no writable characteristic found'); }
+    if(!wc){ throw new Error('no writable characteristic — if you see services above, add that uuid in setup'); }
     state.writeChar = wc;
     state.notifyChar = nc || null;
     state.family = fam;
